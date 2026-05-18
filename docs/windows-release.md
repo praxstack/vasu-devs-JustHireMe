@@ -1,58 +1,77 @@
 # Windows Release Checklist
 
-The stable 1.0.0 public release target is a Windows desktop installer.
+The stable public target for this RC is the Windows desktop installer. macOS and Linux artifacts may still be built by CI where supported, but Windows is the promoted stable path for this pass.
 
-## Build
+## Local Validation
+
+Local machines should validate behavior, not produce public signed installers:
 
 ```powershell
 npm install
 cd backend
 uv sync --dev
 cd ..
-npm run release:windows
+npm run release:smoke
+npm run smoke:windows-update
 ```
 
-The standard Windows release build verifies project versions, builds the frontend and Python sidecar, then produces the NSIS installer through Tauri. Use `npm run release:smoke` when you want the fastest parallel local smoke build without installer generation.
+`npm run release:smoke` is the supported fast local release check. It builds the frontend/backend release path and smokes the sidecar without requiring Tauri updater signing secrets.
 
-Because the app has a Tauri updater public key configured, a full local `npm run release:windows` also needs `TAURI_SIGNING_PRIVATE_KEY` and, when applicable, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Public installers should normally be produced by the tagged GitHub release workflow where those secrets are available.
+`npm run smoke:windows-update` runs static Windows updater checks locally. To smoke a real installer, set:
+
+```powershell
+$env:JHM_WINDOWS_INSTALLER_SMOKE = "1"
+$env:JHM_NEW_INSTALLER = "path\to\JustHireMe_<version>_x64-setup.exe"
+npm run smoke:windows-update
+```
+
+To test update-over-existing locally with two already-built installers:
+
+```powershell
+$env:JHM_WINDOWS_UPDATE_SMOKE = "1"
+$env:JHM_OLD_INSTALLER = "path\to\previous\JustHireMe_<old>_x64-setup.exe"
+$env:JHM_NEW_INSTALLER = "path\to\new\JustHireMe_<new>_x64-setup.exe"
+npm run smoke:windows-update
+```
+
+## Packaging And Signing
+
+Public Windows packaging and updater signing happen in GitHub Actions from a release tag. The release workflow owns these secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, when the key is encrypted
+
+Do not spend local RC time trying to produce signed public installers. `npm run release:windows` and `npm run package:windows` are only useful locally when those signing variables are intentionally available for a packaging rehearsal. Otherwise, use `npm run release:smoke` locally and let tagged CI build the installer.
 
 | Artifact | Use |
 | --- | --- |
-| `src-tauri/target/release/bundle/nsis/JustHireMe_<version>_x64-setup.exe` | Recommended public download for testers |
+| `src-tauri/target/release/bundle/nsis/JustHireMe_<version>_x64-setup.exe` | GitHub Actions-built public Windows installer |
 | `src-tauri/target/release/justhireme.exe` | Unbundled release executable for local smoke tests |
 
-For the fastest release smoke test, skip installer generation:
-
-```powershell
-npm run release:smoke
-.\src-tauri\target\release\justhireme.exe
-```
-
-Build MSI only when you specifically need managed Windows deployment:
+Build MSI only when managed Windows deployment is explicitly needed:
 
 ```powershell
 npm run package:windows:msi
 ```
 
-Build both NSIS and MSI only for a full compatibility release:
+## CI Release Checks
 
-```powershell
-npm run package:windows:all
-```
+Tagged releases must verify:
 
-For the stable core installer, the bundled Python sidecar intentionally excludes the experimental browser automation stack and heavyweight local embedding model packages. The supported release smoke path is app launch, settings, profile/lead workflows, deterministic ranking, and document/outreach generation. Semantic matching should fail soft when local embedding packages are unavailable.
+- updater signing secrets are present before packaging
+- the Windows NSIS installer is produced by Tauri
+- `latest.json` matches the tag, uploaded artifacts, and `.sig` files
+- the newly built Windows installer installs into a temp directory
+- the installed sidecar reports `/health` with app, sqlite, and graph OK, and vector OK or disabled
+- update-over-existing smoke passes when a previous stable Windows installer is available
 
-## Updater Verification
+## Stable Core Scope
 
-Tagged GitHub releases generate `latest.json` from the signed Tauri updater artifacts. The release workflow runs:
+The stable core installer supports app launch, settings, profile/lead workflows, deterministic ranking, profile-aware graph/vector matching, local CRM, and document/outreach generation. Semantic matching must fail soft when optional local embedding packages are unavailable.
 
-```powershell
-npm run release:verify-updater -- release-assets vX.Y.Z
-```
+Browser automation and auto-apply are experimental, opt-in lab features. They are not part of the stable core promise and should not be described as the primary workflow in release notes.
 
-That check fails the release if `latest.json` points at a missing installer, has a mismatched version, omits a signature, or contains a signature that does not match the uploaded `.sig` file.
-
-## Smoke Test
+## Manual Smoke Test
 
 - Install on a clean Windows machine or VM.
 - Open the app without developer tools.
@@ -61,12 +80,9 @@ That check fails the release if `latest.json` points at a missing installer, has
 - Run a scan.
 - Verify leads show signal, fit, and quality explanations.
 - Generate resume PDF, cover letter PDF, and outreach drafts.
-- Confirm experimental browser automation is not presented as the primary workflow.
-- If a previous release is installed, confirm the in-app update prompt downloads the new release, installs it, restarts, and preserves local app data.
+- Confirm browser automation and auto-apply remain clearly experimental and opt-in.
+- If a previous release is installed, confirm the update installs over it and preserves local app data.
 
 ## Release Notes
 
-Mention that browser automation is experimental. The supported workflow is scraper, ranker, vector matching, and customization.
-Mention whether the build is the stable core installer or a future full-ML installer.
-Include SHA256 checksums for every uploaded installer asset.
-Public installers should be built by GitHub Actions from the release tag, not uploaded from a local workstation.
+Mention whether the build is the Windows stable-core installer. Include SHA256 checksums for every uploaded installer asset. Public installers should be built by GitHub Actions from the release tag, not uploaded from a local workstation.

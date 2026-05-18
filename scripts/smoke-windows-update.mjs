@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import process from "node:process";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const enabled = process.env.JHM_WINDOWS_UPDATE_SMOKE === "1";
+const updateSmokeEnabled = process.env.JHM_WINDOWS_UPDATE_SMOKE === "1";
+const installerSmokeEnabled = process.env.JHM_WINDOWS_INSTALLER_SMOKE === "1";
 const timeoutMs = Number(process.env.JHM_WINDOWS_UPDATE_TIMEOUT_MS || 120_000);
 
 function fail(message) {
@@ -27,7 +28,16 @@ function staticChecks() {
     fail(`Windows updater installMode must stay quiet; found ${installMode || "missing"}.`);
   }
   console.log("Windows update static smoke passed.");
+  console.log("Set JHM_WINDOWS_INSTALLER_SMOKE=1 with JHM_NEW_INSTALLER for installed package smoke.");
   console.log("Set JHM_WINDOWS_UPDATE_SMOKE=1 with JHM_OLD_INSTALLER and JHM_NEW_INSTALLER for installer-over-existing smoke.");
+}
+
+function resolveInstaller(envName) {
+  const raw = process.env[envName] || "";
+  if (!raw) fail(`${envName} is required.`);
+  const installer = resolve(raw);
+  if (!existsSync(installer)) fail(`${envName} not found: ${installer}`);
+  return installer;
 }
 
 function run(command, args, options = {}) {
@@ -42,15 +52,72 @@ function run(command, args, options = {}) {
 }
 
 function killImage(name) {
+  if (process.platform !== "win32") return;
   spawnSync("taskkill", ["/IM", name, "/T", "/F"], { stdio: "ignore", windowsHide: true });
 }
 
+function killProcessTree(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+  } else {
+    child.kill("SIGTERM");
+  }
+}
+
 function remove(path) {
-  rmSync(path, { recursive: true, force: true });
+  rmSync(path, {
+    recursive: true,
+    force: true,
+    maxRetries: 20,
+    retryDelay: 750,
+  });
+}
+
+function isRetryableRemoveError(error) {
+  return ["EBUSY", "EPERM", "ENOTEMPTY", "EACCES"].includes(error?.code);
+}
+
+async function removeWithRetry(path, options = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    try {
+      remove(path);
+      return true;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableRemoveError(error)) break;
+      await sleep(Math.min(500 * attempt, 2500));
+    }
+  }
+  if (options.allowFailure) {
+    console.warn(`Cleanup warning for ${options.label || path}: ${lastError?.message || lastError}`);
+    return false;
+  }
+  throw lastError;
 }
 
 function sleep(ms) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function waitForChildClose(child, ms) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolveWait) => {
+    const timer = setTimeout(() => {
+      child.off("close", onClose);
+      child.off("exit", onClose);
+      resolveWait(false);
+    }, ms);
+    function onClose() {
+      clearTimeout(timer);
+      resolveWait(true);
+    }
+    child.once("close", onClose);
+    child.once("exit", onClose);
+  });
 }
 
 function waitForHandshake(child, stdoutLines, stderrLines) {
@@ -116,6 +183,47 @@ async function readHealth(port, token) {
   throw lastError || new Error("health timeout");
 }
 
+async function requestShutdown(port, token) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/shutdown`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      console.warn(`/api/v1/shutdown returned HTTP ${response.status}: ${await response.text()}`);
+    }
+  } catch (error) {
+    console.warn(`Could not request graceful sidecar shutdown: ${error.message}`);
+  }
+}
+
+async function stopSidecar(child, handshake) {
+  if (handshake?.port && handshake?.token) {
+    await requestShutdown(handshake.port, handshake.token);
+  }
+  const closedCleanly = await waitForChildClose(child, 15_000);
+  if (!closedCleanly) {
+    killProcessTree(child);
+    await waitForChildClose(child, 5_000);
+  }
+  await sleep(1000);
+}
+
+function requireHealth(health) {
+  const components = health.components || health.checks || {};
+  const rawApp = components.app?.status || health.status;
+  if (!["ok", "alive"].includes(rawApp)) fail(`App health is ${rawApp || "missing"}`);
+  if (components.sqlite?.status !== "ok") fail(`SQLite health is ${components.sqlite?.status || "missing"}`);
+  if (components.graph?.status !== "ok") fail(`Graph health is ${components.graph?.status || "missing"}`);
+  if (!["ok", "disabled"].includes(components.vector?.status)) fail(`Vector health is ${components.vector?.status || "missing"}`);
+  return {
+    app: rawApp === "alive" ? "ok" : rawApp,
+    sqlite: components.sqlite.status,
+    graph: components.graph.status,
+    vector: components.vector.status,
+  };
+}
+
 async function smokeInstalledSidecar(installDir, appDataDir) {
   const sidecar = join(installDir, "jhm-sidecar-next.exe");
   const runtime = join(installDir, "_internal");
@@ -123,7 +231,7 @@ async function smokeInstalledSidecar(installDir, appDataDir) {
   if (!existsSync(join(runtime, "python313.dll"))) fail(`Missing installed runtime DLL: ${join(runtime, "python313.dll")}`);
   if (!existsSync(join(runtime, "base_library.zip"))) fail(`Missing installed Python library: ${join(runtime, "base_library.zip")}`);
 
-  remove(appDataDir);
+  await removeWithRetry(appDataDir);
   mkdirSync(appDataDir, { recursive: true });
   const stdoutLines = [];
   const stderrLines = [];
@@ -139,37 +247,57 @@ async function smokeInstalledSidecar(installDir, appDataDir) {
     windowsHide: true,
   });
 
+  let handshake = null;
   try {
-    const handshake = await waitForHandshake(child, stdoutLines, stderrLines);
+    handshake = await waitForHandshake(child, stdoutLines, stderrLines);
     const health = await readHealth(handshake.port, handshake.token);
-    const components = health.components || health.checks || {};
-    if (components.sqlite?.status !== "ok") fail(`SQLite health is ${components.sqlite?.status || "missing"}`);
-    if (components.graph?.status !== "ok") fail(`Graph health is ${components.graph?.status || "missing"}`);
-    if (!["ok", "disabled"].includes(components.vector?.status)) fail(`Vector health is ${components.vector?.status || "missing"}`);
+    const summary = requireHealth(health);
+    console.log(`Installed sidecar health passed: app=${summary.app}, sqlite=${summary.sqlite}, graph=${summary.graph}, vector=${summary.vector}`);
   } finally {
-    if (child.exitCode === null) {
-      spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-    }
+    await stopSidecar(child, handshake);
   }
 }
 
-async function installerSmoke() {
+function newSmokeRoot(prefix) {
+  return join(repoRoot, ".codex-temp-sidecar", `${prefix}-${Date.now()}-${process.pid}`);
+}
+
+async function freshInstallerSmoke() {
+  if (process.platform !== "win32") {
+    fail("Installed Windows package smoke must run on Windows.");
+  }
+  const newInstaller = resolveInstaller("JHM_NEW_INSTALLER");
+
+  const root = newSmokeRoot("windows-installer-smoke");
+  const installDir = join(root, "install");
+  const appDataDir = join(root, "appdata");
+  await removeWithRetry(root);
+  mkdirSync(installDir, { recursive: true });
+  mkdirSync(appDataDir, { recursive: true });
+
+  try {
+    run(newInstaller, ["/S", `/D=${installDir}`]);
+    await smokeInstalledSidecar(installDir, appDataDir);
+    console.log(`Windows installed package smoke passed: ${installDir}`);
+  } finally {
+    killImage("justhireme.exe");
+    killImage("jhm-sidecar-next.exe");
+    killImage("backend.exe");
+    await removeWithRetry(root, { allowFailure: true, label: "Windows installed package smoke temp dir" });
+  }
+}
+
+async function updateInstallerSmoke() {
   if (process.platform !== "win32") {
     fail("Installer-over-existing smoke must run on Windows.");
   }
-  const oldInstallerRaw = process.env.JHM_OLD_INSTALLER || "";
-  const newInstallerRaw = process.env.JHM_NEW_INSTALLER || "";
-  if (!oldInstallerRaw) fail("JHM_OLD_INSTALLER is required when JHM_WINDOWS_UPDATE_SMOKE=1.");
-  if (!newInstallerRaw) fail("JHM_NEW_INSTALLER is required when JHM_WINDOWS_UPDATE_SMOKE=1.");
-  const oldInstaller = resolve(oldInstallerRaw);
-  const newInstaller = resolve(newInstallerRaw);
-  if (!existsSync(oldInstaller)) fail(`JHM_OLD_INSTALLER not found: ${oldInstaller}`);
-  if (!existsSync(newInstaller)) fail(`JHM_NEW_INSTALLER not found: ${newInstaller}`);
+  const oldInstaller = resolveInstaller("JHM_OLD_INSTALLER");
+  const newInstaller = resolveInstaller("JHM_NEW_INSTALLER");
 
-  const root = join(repoRoot, ".codex-temp-sidecar", `windows-update-smoke-${Date.now()}-${process.pid}`);
+  const root = newSmokeRoot("windows-update-smoke");
   const installDir = join(root, "install");
   const appDataDir = join(root, "appdata");
-  remove(root);
+  await removeWithRetry(root);
   mkdirSync(installDir, { recursive: true });
   mkdirSync(appDataDir, { recursive: true });
 
@@ -189,7 +317,8 @@ async function installerSmoke() {
 
     run(newInstaller, ["/S", `/D=${installDir}`]);
     if (appProcess && appProcess.exitCode === null) {
-      spawnSync("taskkill", ["/PID", String(appProcess.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      killProcessTree(appProcess);
+      await waitForChildClose(appProcess, 5_000);
     }
     killImage("justhireme.exe");
     killImage("jhm-sidecar-next.exe");
@@ -199,12 +328,14 @@ async function installerSmoke() {
     killImage("justhireme.exe");
     killImage("jhm-sidecar-next.exe");
     killImage("backend.exe");
-    remove(root);
+    await removeWithRetry(root, { allowFailure: true, label: "Windows update smoke temp dir" });
   }
 }
 
-if (!enabled) {
-  staticChecks();
+if (updateSmokeEnabled) {
+  await updateInstallerSmoke();
+} else if (installerSmokeEnabled) {
+  await freshInstallerSmoke();
 } else {
-  await installerSmoke();
+  staticChecks();
 }

@@ -81,8 +81,8 @@ class RegressionTests(unittest.TestCase):
         from pypdf import PdfReader
         import generation.pdf_renderer as renderer
 
-        dense_resume = """# Vasudev
-LinkedIn: linkedin.com/in/vasu-devs Email: vasu@example.com GitHub: github.com/vasu-devs Mobile: +91-XXXXXXXXXX
+        dense_resume = """# Alex Example
+LinkedIn: linkedin.com/in/alex-example Email: alex@example.test GitHub: github.com/alex-example Mobile: +1 555 010 0003
 
 ## SUMMARY
 Applied AI engineer building production-grade LLM pipelines and automation with Python, multi-agent RAG document generation tools, prompt evaluation, ATS systems, and full-stack delivery.
@@ -96,12 +96,12 @@ Applied AI engineer building production-grade LLM pipelines and automation with 
 **Core Concepts:** Data Structures & Algorithms, REST APIs, Automation, Prompt Evaluation
 
 ## PROJECTS
-### JustHireMe - Multi-Agent RAG Pipeline for Hiring : (github.com/vasu-devs/JustHireMe) Jan'24
+### JustHireMe - Multi-Agent RAG Pipeline for Hiring : (github.com/alex-example/JustHireMe) Jan'24
 - Built a multi-agent RAG pipeline using Python and LLM integrations to scrape job postings, rank candidate fit, and generate ATS-friendly documents.
 - Integrated semantic search with vector database and background jobs for async processing.
 - Tech: Python, LLM, RAG, Semantic Search, Vector Database, Multi-agent
 
-### A18-INFNION - Multi-Provider LLM Bug Detection System : (github.com/vasu-devs/A18-INFNION) Feb'24
+### A18-INFNION - Multi-Provider LLM Bug Detection System : (github.com/alex-example/A18-INFNION) Feb'24
 - Implemented MCP tooling to unify LLM provider interactions and CSV-based data pipelines for structured analysis.
 - Delivered final Infineon A18 Challenge with end-to-end automation from parsing to actionable reports.
 - Tech: Python, LLM, Gemini, OpenAI, DeepSeek, MCP

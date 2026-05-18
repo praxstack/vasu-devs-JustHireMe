@@ -21,7 +21,7 @@ def test_profile_service_import_profile_data_counts_and_identity(monkeypatch):
 
     result = asyncio.run(service.import_profile_data({
         "candidate": {"name": "Vasu", "summary": "AI engineer"},
-        "identity": {"email": "vasu@example.com", "github_url": "https://github.com/vasu"},
+        "identity": {"email": "alex@example.test", "github_url": "https://github.com/alex-example"},
         "skills": [{"name": "Python", "category": "technical"}],
         "experience": [{"role": "Engineer", "company": "Acme", "period": "2024", "description": "Built agents"}],
         "projects": [{"title": "JustHireMe", "stack": "Python, React", "repo": "", "impact": "Local-first job workbench"}],
@@ -40,8 +40,8 @@ def test_profile_service_import_profile_data_counts_and_identity(monkeypatch):
         "achievements": 1,
         "vector_sync": "queued",
     }
-    assert calls["identity"][0]["email"] == "vasu@example.com"
-    assert calls["identity"][0]["github_url"] == "https://github.com/vasu"
+    assert calls["identity"][0]["email"] == "alex@example.test"
+    assert calls["identity"][0]["github_url"] == "https://github.com/alex-example"
 
 
 def test_profile_service_update_identity_saves_profile_contact(monkeypatch):
@@ -55,14 +55,14 @@ def test_profile_service_update_identity_saves_profile_contact(monkeypatch):
     monkeypatch.setattr("profile.service.graph_profile.save_settings", lambda _payload, *_args: None)
 
     identity = service.update_identity({
-        "email": "vasu@example.com",
-        "phone": "+91 99999 99999",
-        "linkedin_url": "https://linkedin.com/in/vasu",
+        "email": "alex@example.test",
+        "phone": "+1 555 010 0002",
+        "linkedin_url": "https://linkedin.com/in/example-candidate",
     })
 
-    assert identity["email"] == "vasu@example.com"
-    assert identity["phone"] == "+91 99999 99999"
-    assert saved["identity"]["linkedin_url"] == "https://linkedin.com/in/vasu"
+    assert identity["email"] == "alex@example.test"
+    assert identity["phone"] == "+1 555 010 0002"
+    assert saved["identity"]["linkedin_url"] == "https://linkedin.com/in/example-candidate"
 
 
 def test_profile_service_import_profile_data_accepts_legacy_keys(monkeypatch):
@@ -132,12 +132,12 @@ def test_profile_service_import_profile_data_repairs_project_links_and_certifica
 
     result = asyncio.run(service.import_profile_data({
         "candidate": {
-            "name": "Komalpreet Kaur",
-            "summary": "Email: kaur@example.com. Phone: +91 9451735039. Links: https://github.com/Komalpreet2809/Vanta",
+            "name": "Casey Example",
+            "summary": "Email: casey@example.test. Phone: +1 555 010 0001. Links: https://github.com/example-candidate/Vanta",
         },
         "projects": [
-            {"title": "conditioning. - https://github.com/Komalpreet2809/Vanta", "impact": "Deployed FastAPI backend."},
-            {"title": "APIs.", "impact": "Playwright | https://github.com/Komalpreet2809/Specula"},
+            {"title": "conditioning. - https://github.com/example-candidate/Vanta", "impact": "Deployed FastAPI backend."},
+            {"title": "APIs.", "impact": "Playwright | https://github.com/example-candidate/Specula"},
         ],
         "certifications": [
             {"title": "Social Networks"},
@@ -147,7 +147,7 @@ def test_profile_service_import_profile_data_repairs_project_links_and_certifica
     }))
 
     assert result["status"] == "ok"
-    assert calls["candidate"][0] == ("Komalpreet Kaur", "")
+    assert calls["candidate"][0] == ("Casey Example", "")
     assert [project[0] for project in calls["projects"]] == ["Vanta", "Specula"]
     assert calls["projects"][1][1] == "Playwright"
     assert calls["certifications"] == ["Social Networks - NPTEL Jan 2025 - Apr 2025"]

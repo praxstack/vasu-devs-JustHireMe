@@ -115,7 +115,7 @@ Tasks:
   - `npm run build:sidecar`
   - `npm run build:tauri`
   - `npm run release:smoke`
-  - `npm run release:windows`
+  - `npm run release:windows` for CI/tag release packaging or an intentional local packaging rehearsal with updater signing variables available
   - `npm run release:linux`
   - `npm run release:macos`
 - Keep `release:smoke` fast:

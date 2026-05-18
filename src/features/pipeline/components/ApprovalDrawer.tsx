@@ -101,7 +101,7 @@ export function ApprovalDrawer({ j: initialLead, api, onClose }: {
     return () => controller.abort();
   }, [loadVersions, j.resume_asset, j.cover_letter_asset, j.resume_version]);
 
-  // Tauri WebView blocks <iframe src="http://..."> for localhost � fetch as blob instead
+  // Tauri WebView blocks localhost iframe previews, so fetch the PDF as a blob.
   useEffect(() => {
     if (!activeDocPath) { setPdfBlobUrl(null); setPdfLoadErr(null); return; }
     let revoke: string | null = null;

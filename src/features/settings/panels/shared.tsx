@@ -189,7 +189,17 @@ export const GLOBAL_MODEL_FIELD: Record<string, keyof Cfg> = {
   custom: "custom_model",
 };
 
-export const SECRET_MASKS = new Set(["__JHM_SECRET_SET__", "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢", "••••••••••••••••••••"]);
+const SECRET_MASK = "__JHM_SECRET_SET__";
+const LEGACY_BULLET_MASK = "\u2022".repeat(20);
+const LEGACY_MOJIBAKE_BULLET_MASK = "\u00e2\u20ac\u00a2".repeat(20);
+const LEGACY_DOUBLE_ENCODED_BULLET_MASK = "\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2".repeat(20);
+
+export const SECRET_MASKS = new Set([
+  SECRET_MASK,
+  LEGACY_BULLET_MASK,
+  LEGACY_MOJIBAKE_BULLET_MASK,
+  LEGACY_DOUBLE_ENCODED_BULLET_MASK,
+]);
 
 /* helpers */
 export function LabelledField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {

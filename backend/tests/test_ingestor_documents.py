@@ -39,7 +39,7 @@ def test_local_parser_extracts_normal_resume_without_llm():
     profile = ingestor._parse_local(
         """
 Jane Doe
-jane@example.com | https://github.com/jane
+jane@example.test | https://github.com/jane-example
 
 Summary
 Applied AI engineer building FastAPI and React products.
@@ -66,10 +66,10 @@ Hiring Agent - FastAPI, React, RAG job matching
 def test_local_parser_does_not_store_contacts_as_summary():
     profile = ingestor._parse_local(
         """
-Komalpreet Kaur
-kaurkomalpreetsohal@gmail.com | +91 9451735039
-https://github.com/Komalpreet2809/Vanta
-https://github.com/Komalpreet2809/SOMA
+Casey Example
+casey@example.test | +1 555 010 0001
+https://github.com/example-candidate/Vanta
+https://github.com/example-candidate/SOMA
 
 Skills
 Python, FastAPI, React
@@ -85,15 +85,15 @@ Python, FastAPI, React
 def test_local_parser_repairs_project_titles_and_certificates():
     profile = ingestor._parse_local(
         """
-Komalpreet Kaur
+Casey Example
 
 Skills
 Python, FastAPI, React, Playwright
 
 Projects
-conditioning. - https://github.com/Komalpreet2809/Vanta
+conditioning. - https://github.com/example-candidate/Vanta
 - Deployed FastAPI backend on Hugging Face Spaces and Next.js frontend on Vercel.
-APIs. - Playwright | https://github.com/Komalpreet2809/Specula
+APIs. - Playwright | https://github.com/example-candidate/Specula
 - Built Chrome extension for Pinterest outfit segmentation with Python and FastAPI.
 
 Certificates
@@ -114,7 +114,7 @@ NPTEL -- Certificate Link
 def test_resume_parser_stitches_pdf_project_headers_and_continuations():
     profile = ingestor._parse_resume_heuristic(
         """
-Vasudev Siddh
+Alex Example
 Full Stack AI Engineer
 
 Technical Skills
@@ -126,24 +126,24 @@ AI / LLM: Groq, LangChain, LangGraph
 Voice & Realtime: LiveKit, Deepgram, SIP
 
 Projects
-BranchGPT (branchgpt.vasudev.live) Next.js 16, TypeScript, Drizzle, Neon PG, Groq
+BranchGPT (branchgpt.example.test) Next.js 16, TypeScript, Drizzle, Neon PG, Groq
 Git-styled DAG Chat Interface for LLM Context Optimization
-• Modeled conversations as a Directed Acyclic Graph.
-• Implemented LLM-summarized merges via Llama 3.3 that retain insight without transcript bloat – merge logic filters shared
+- Modeled conversations as a Directed Acyclic Graph.
+- Implemented LLM-summarized merges via Llama 3.3 that retain insight without transcript bloat - merge logic filters shared
 history, appending only new content.
 V aani(GitHub) Python, FastAPI, LiveKit, Deepgram, Groq, SIP, Docker
 Voice-Native Debt Collection Platform with Real-Time Risk Analysis
-• Engineered two tuned personas dispatched by debtor archetype, with real-time interrup-
+- Engineered two tuned personas dispatched by debtor archetype, with real-time interrup-
 tion handling.
 Odeon (GitHub) FastAPI, WebSockets, LangChain, Groq, React 19
 Self-Improving Voice Agent Optimization Framework
-• Built a measurable prompt-tuning loop.
+- Built a measurable prompt-tuning loop.
 Socratis (GitHub) Next.js 14, Python, LiveKit, Deepgram, Groq, MongoDB
 Real-Time AI Technical Interviewer with Live Code Awareness
-• Built post-interview forensic analysis: Big-O evaluation.
+- Built post-interview forensic analysis: Big-O evaluation.
 
 Education
-B.T ech in Computer Science Engineering, Lovely Professional University
+B.T ech in Computer Science Engineering, Example University
 CGPA: 8.59
 """
     )

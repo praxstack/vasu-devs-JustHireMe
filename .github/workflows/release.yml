@@ -378,6 +378,67 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run ${{ matrix.package_script }}
 
+      - name: Smoke installed Windows package
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Get-ChildItem -Path "src-tauri\target\release\bundle\nsis" -Filter "*.exe" -File -Recurse |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "No NSIS installer found for Windows package smoke."
+          }
+          $env:JHM_WINDOWS_INSTALLER_SMOKE = "1"
+          $env:JHM_NEW_INSTALLER = $installer.FullName
+          npm run smoke:windows-update
+
+      - name: Smoke Windows update over previous stable
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $currentTag = "${{ github.ref_name }}"
+          $releasesJson = gh release list --exclude-drafts --exclude-pre-releases --limit 10 --json tagName
+          $previousTag = ($releasesJson | ConvertFrom-Json |
+            Where-Object { $_.tagName -ne $currentTag } |
+            Select-Object -First 1).tagName
+          if (-not $previousTag) {
+            Write-Host "No previous stable release found; skipping update-over-existing smoke."
+            exit 0
+          }
+
+          $previousDir = Join-Path $env:RUNNER_TEMP "previous-justhireme-release"
+          New-Item -ItemType Directory -Path $previousDir -Force | Out-Null
+          try {
+            gh release download $previousTag --pattern "*.exe" --dir $previousDir --clobber
+          } catch {
+            Write-Host "No previous Windows NSIS installer found for $previousTag; skipping update-over-existing smoke."
+            exit 0
+          }
+
+          $oldInstaller = Get-ChildItem -Path $previousDir -Filter "*.exe" -File |
+            Sort-Object Length -Descending |
+            Select-Object -First 1
+          if (-not $oldInstaller) {
+            Write-Host "Previous release $previousTag has no Windows NSIS installer; skipping update-over-existing smoke."
+            exit 0
+          }
+
+          $newInstaller = Get-ChildItem -Path "src-tauri\target\release\bundle\nsis" -Filter "*.exe" -File -Recurse |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $newInstaller) {
+            throw "No current NSIS installer found for update-over-existing smoke."
+          }
+
+          $env:JHM_WINDOWS_UPDATE_SMOKE = "1"
+          $env:JHM_OLD_INSTALLER = $oldInstaller.FullName
+          $env:JHM_NEW_INSTALLER = $newInstaller.FullName
+          npm run smoke:windows-update
+
       - name: Smoke packaged Windows sidecar
         if: matrix.platform == 'windows'
         shell: pwsh

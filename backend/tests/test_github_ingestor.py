@@ -14,8 +14,8 @@ def test_github_ingestor_imports_all_repos_and_enriches_top_without_token(monkey
     repos = [
         {
             "name": f"repo-{index}",
-            "full_name": f"vasu/repo-{index}",
-            "html_url": f"https://github.com/vasu/repo-{index}",
+            "full_name": f"example-candidate/repo-{index}",
+            "html_url": f"https://github.com/example-candidate/repo-{index}",
             "description": f"Production project {index}",
             "language": "Python" if index == 0 else "TypeScript",
             "topics": ["fastapi", "react"] if index == 0 else ["nextjs"],
@@ -31,16 +31,16 @@ def test_github_ingestor_imports_all_repos_and_enriches_top_without_token(monkey
     ]
 
     async def fake_fetch(url: str, token: str | None):
-        if url.endswith("/users/vasu"):
+        if url.endswith("/users/example-candidate"):
             return {
-                "login": "vasu",
-                "name": "Vasu",
+                "login": "example-candidate",
+                "name": "Example Candidate",
                 "bio": "Builder",
                 "public_repos": 25,
                 "followers": 7,
-                "html_url": "https://github.com/vasu",
+                "html_url": "https://github.com/example-candidate",
             }
-        if "/users/vasu/repos" in url:
+        if "/users/example-candidate/repos" in url:
             return repos
         if "/git/trees/" in url:
             return {
@@ -68,9 +68,9 @@ def test_github_ingestor_imports_all_repos_and_enriches_top_without_token(monkey
     monkeypatch.setattr(gh, "_fetch", fake_fetch)
     monkeypatch.setattr(gh, "_extract_project", fake_extract)
 
-    result = asyncio.run(gh.ingest_github("vasu", max_repos=25))
+    result = asyncio.run(gh.ingest_github("example-candidate", max_repos=25))
 
-    assert result["github_user"]["login"] == "vasu"
+    assert result["github_user"]["login"] == "example-candidate"
     assert result["stats"]["repos_fetched"] == 25
     assert result["stats"]["projects_extracted"] == 25
     assert result["stats"]["repos_enriched"] == 20
@@ -90,8 +90,8 @@ def test_github_ingestor_token_enriches_all_requested_repos(monkeypatch):
     repos = [
         {
             "name": f"app-{index}",
-            "full_name": f"vasu/app-{index}",
-            "html_url": f"https://github.com/vasu/app-{index}",
+            "full_name": f"example-candidate/app-{index}",
+            "html_url": f"https://github.com/example-candidate/app-{index}",
             "description": "Full-stack app",
             "language": "TypeScript",
             "topics": ["nextjs"],
@@ -108,9 +108,9 @@ def test_github_ingestor_token_enriches_all_requested_repos(monkeypatch):
 
     async def fake_fetch(url: str, token: str | None):
         assert token == "ghp_test"
-        if url.endswith("/users/vasu"):
-            return {"login": "vasu", "public_repos": 3, "html_url": "https://github.com/vasu"}
-        if "/users/vasu/repos" in url:
+        if url.endswith("/users/example-candidate"):
+            return {"login": "example-candidate", "public_repos": 3, "html_url": "https://github.com/example-candidate"}
+        if "/users/example-candidate/repos" in url:
             return repos
         if url.endswith("/languages"):
             return {"TypeScript": 5000}
@@ -124,7 +124,7 @@ def test_github_ingestor_token_enriches_all_requested_repos(monkeypatch):
     monkeypatch.setattr(gh, "_fetch", fake_fetch)
     monkeypatch.setattr(gh, "_extract_project", fake_extract)
 
-    result = asyncio.run(gh.ingest_github("vasu", token="ghp_test", max_repos=3))
+    result = asyncio.run(gh.ingest_github("example-candidate", token="ghp_test", max_repos=3))
 
     assert result["stats"]["repos_fetched"] == 3
     assert result["stats"]["projects_extracted"] == 3
@@ -140,7 +140,7 @@ def test_github_ingestor_does_not_label_rate_limit_as_missing_user(monkeypatch):
 
     monkeypatch.setattr(gh, "_fetch", fake_fetch)
 
-    result = asyncio.run(gh.ingest_github("vasu-devs", max_repos=10))
+    result = asyncio.run(gh.ingest_github("example-candidate", max_repos=10))
 
     assert result["error_kind"] == "github_unavailable"
     assert result["status_code"] == 429

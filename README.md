@@ -57,7 +57,7 @@ JustHireMe is built and maintained by Vasudev Siddh - full-stack AI engineer, op
 
 ## Current Status
 
-JustHireMe 1.0.0 is the stable local-first core release. The supported scope is the desktop workbench, Python sidecar API, lead ingestion, deterministic ranking, profile-aware matching, local CRM workflows, and document/outreach generation.
+JustHireMe's stable core is the local-first desktop workbench, Python sidecar API, lead ingestion, deterministic ranking, profile-aware matching, local CRM workflows, and document/outreach generation. The promoted stable installer target for this RC is Windows, built and signed by GitHub Actions from release tags.
 
 | Area | Status |
 | --- | --- |
@@ -81,7 +81,7 @@ It helps you:
 | Match | Use Kuzu graph data and LanceDB vectors to compare jobs against your profile context | Matching is profile-aware, not keyword-only |
 | Customize | Generate tailored resume PDF, cover letter PDF, and outreach drafts | You get a useful package, not just a list of links |
 
-> Browser automation and auto-apply code exists in the repository, but it is experimental and unsupported. The supported open-source core is scraper, ranker, vector matching, and customizer.
+> Browser automation and auto-apply code exists in the repository, but it is experimental, opt-in, and unsupported as part of the stable core. The supported open-source core is scraper, ranker, vector matching, and customizer.
 
 ---
 
@@ -373,7 +373,7 @@ cd ..
 | Build frontend, website, and Rust check | `npm run build:all` |
 | Fast release smoke | `npm run release:smoke` |
 | Release preflight | `npm run release:preflight` |
-| Windows installer | `npm run release:windows` |
+| Windows installer package rehearsal (requires updater signing env) | `npm run release:windows` |
 | Linux packages | `npm run release:linux` |
 | macOS package | `npm run release:macos` |
 
@@ -397,10 +397,9 @@ Use this workflow for normal development and pull requests:
 Use this release flow for maintainer builds:
 
 1. Bump all versioned files with `npm run version:bump -- X.Y.Z`.
-2. Run `npm run release:preflight`.
-3. Build the platform package with `npm run release:windows`, `npm run release:linux`, or `npm run release:macos`.
-4. For public releases, push a `vX.Y.Z` tag and let GitHub Actions build, sign, verify updater metadata, generate checksums, and publish release assets from CI.
-5. Verify generated updater artifacts with `npm run release:verify-updater -- release-assets vX.Y.Z` when checking a local asset folder.
+2. Run local validation with `npm run check:all`, `npm run lint`, `npm run test:coverage`, `npm run release:smoke`, and `npm run smoke:windows-update`.
+3. Push a `vX.Y.Z` tag and let GitHub Actions build, sign, verify updater metadata, smoke the Windows installer, generate checksums, and publish release assets from CI.
+4. Verify generated updater artifacts with `npm run release:verify-updater -- release-assets vX.Y.Z` when checking a downloaded CI asset folder.
 
 Detailed release checklists live in [docs/MAINTAINER_RELEASE_CHECKLIST.md](docs/MAINTAINER_RELEASE_CHECKLIST.md), [docs/windows-release.md](docs/windows-release.md), and [docs/PRODUCTION_RELEASE_ROADMAP.md](docs/PRODUCTION_RELEASE_ROADMAP.md).
 
@@ -575,10 +574,11 @@ Planned improvement:
 Windows is the primary stable installer target. macOS and Linux packaging scripts and CI release lanes exist; check each release's notes for the currently supported platform level. Public installers should be built and published by GitHub Actions from a `v*` tag, not uploaded from a maintainer workstation.
 
 ```powershell
-npm run release:windows
+npm run release:smoke
+npm run smoke:windows-update
 ```
 
-Use `npm run release:linux` or `npm run release:macos` for platform-specific local package builds. For local smoke tests without installer bundling, use `npm run release:smoke`.
+Use `npm run release:windows` only for an intentional local package rehearsal when Tauri updater signing variables are available. Use `npm run release:linux` or `npm run release:macos` for platform-specific local package builds when you are explicitly testing those paths.
 
 Release smoke test and packaging details: [docs/windows-release.md](docs/windows-release.md), [docs/MAINTAINER_RELEASE_CHECKLIST.md](docs/MAINTAINER_RELEASE_CHECKLIST.md), and [docs/PRODUCTION_RELEASE_ROADMAP.md](docs/PRODUCTION_RELEASE_ROADMAP.md).
 

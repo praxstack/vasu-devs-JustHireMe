@@ -8,10 +8,10 @@ def test_portfolio_ingestor_extracts_real_site_structure_without_llm(monkeypatch
 
     pages = [
         portfolio.PageSnapshot(
-            url="https://vasu.dev/",
-            title="Vasu Devs | Full Stack Engineer",
+            url="https://portfolio.example.test/",
+            title="Alex Example | Full Stack Engineer",
             text="""
-            Vasu Devs
+            Alex Example
             Full-stack engineer building AI products, local-first automation, and data workflows.
             I build production React, TypeScript, Python, FastAPI, PostgreSQL, Docker, LLM and RAG systems.
             Featured Projects
@@ -19,15 +19,15 @@ def test_portfolio_ingestor_extracts_real_site_structure_without_llm(monkeypatch
             Local-first AI job intelligence workbench with resume generation and graph ranking.
             BranchGPT
             Developer workflow agent with Next.js, React, OpenAI and PostgreSQL.
-            Contact vasu@example.com
+            Contact alex@example.test
             """,
             links=[
-                {"href": "https://github.com/vasu-devs/justhireme", "text": "GitHub"},
-                {"href": "https://linkedin.com/in/vasu-devs", "text": "LinkedIn"},
+                {"href": "https://github.com/alex-example/justhireme", "text": "GitHub"},
+                {"href": "https://linkedin.com/in/alex-example", "text": "LinkedIn"},
             ],
         ),
         portfolio.PageSnapshot(
-            url="https://vasu.dev/projects",
+            url="https://portfolio.example.test/projects",
             title="Projects",
             text="""
             Selected Work
@@ -36,7 +36,7 @@ def test_portfolio_ingestor_extracts_real_site_structure_without_llm(monkeypatch
             BranchGPT
             Ships AI-assisted repository workflows with Next.js, TypeScript and OpenAI.
             """,
-            links=[{"href": "https://github.com/vasu-devs/branchgpt", "text": "BranchGPT repo"}],
+            links=[{"href": "https://github.com/alex-example/branchgpt", "text": "BranchGPT repo"}],
         ),
     ]
 
@@ -49,12 +49,12 @@ def test_portfolio_ingestor_extracts_real_site_structure_without_llm(monkeypatch
     monkeypatch.setattr(portfolio, "_crawl_portfolio_browser", fake_browser)
     monkeypatch.setattr(portfolio, "_extract_with_llm", fake_llm)
 
-    result = asyncio.run(portfolio.ingest_portfolio_url("https://vasu.dev"))
+    result = asyncio.run(portfolio.ingest_portfolio_url("https://portfolio.example.test"))
 
     assert result["error"] is None
-    assert result["candidate"]["name"] == "Vasu Devs"
-    assert result["identity"]["email"] == "vasu@example.com"
-    assert result["identity"]["linkedin_url"] == "https://linkedin.com/in/vasu-devs"
+    assert result["candidate"]["name"] == "Alex Example"
+    assert result["identity"]["email"] == "alex@example.test"
+    assert result["identity"]["linkedin_url"] == "https://linkedin.com/in/alex-example"
     assert any(skill["name"] == "FastAPI" for skill in result["skills"])
     assert any(skill["name"] == "RAG" for skill in result["skills"])
     assert any(project["title"] == "JustHireMe" for project in result["projects"])
@@ -338,7 +338,7 @@ def test_portfolio_ingestor_rejects_browser_nav_and_identity_as_projects(monkeyp
             Featured Projects
             Ops Console
             Built a React and FastAPI analytics dashboard with PostgreSQL automations for operators.
-            Contact jane@example.com
+            Contact jane@example.test
             """,
             links=[{"href": "https://github.com/jane/ops-console", "text": "GitHub"}],
         ),
@@ -370,7 +370,7 @@ def test_portfolio_ingestor_rejects_browser_nav_and_identity_as_projects(monkeyp
     assert "Signal Graph" in titles
     assert "Jane Doe" not in titles
     assert "ProjectsGitHub" not in titles
-    assert "Contact jane@example.com" not in titles
+    assert "Contact jane@example.test" not in titles
 
 
 def test_portfolio_ingestor_normalizes_preview_buckets(monkeypatch):

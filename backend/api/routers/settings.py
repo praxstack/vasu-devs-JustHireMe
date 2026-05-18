@@ -14,10 +14,14 @@ from data.repository import Repository
 
 
 MASK = "__JHM_SECRET_SET__"
+LEGACY_BULLET_MASK = "\u2022" * 20
+LEGACY_MOJIBAKE_BULLET_MASK = "\u00e2\u20ac\u00a2" * 20
+LEGACY_DOUBLE_ENCODED_BULLET_MASK = "\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2" * 20
 LEGACY_MASKS = {
     MASK,
-    "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢",
-    "••••••••••••••••••••",
+    LEGACY_BULLET_MASK,
+    LEGACY_MOJIBAKE_BULLET_MASK,
+    LEGACY_DOUBLE_ENCODED_BULLET_MASK,
 }
 
 

@@ -4,39 +4,44 @@ Use this before cutting a public release or sharing a build link.
 
 For the full production release plan, see [Production Release Roadmap](PRODUCTION_RELEASE_ROADMAP.md).
 
-## Required Checks
+## Required Local Checks
 
 - [ ] `npm ci`
-- [ ] `npm run release:preflight`
-- [ ] `npm run version:check`
-- [ ] `npm run typecheck`
-- [ ] `npm test`
-- [ ] `npm run build`
-- [ ] `cd backend && uv sync --dev`
-- [ ] `cd backend && uv run python -m pytest tests/test_regressions.py tests/test_api.py::TestAuthGate`
-- [ ] `cd src-tauri && cargo test --lib`
-- [ ] `cd src-tauri && cargo check`
-- [ ] For generated release assets, `npm run release:verify-updater -- release-assets vX.Y.Z`
+- [ ] `npm run check:all`
+- [ ] `npm run lint`
+- [ ] `npm run test:coverage`
+- [ ] `cd backend && .\.venv\Scripts\python.exe -m ruff check .`
+- [ ] `cd backend && .\.venv\Scripts\python.exe -m mypy . --ignore-missing-imports`
+- [ ] `cd backend && .\.venv\Scripts\python.exe -m pytest tests -q --cov=. --cov-report=term-missing --cov-fail-under=60`
+- [ ] `npm run release:smoke`
+- [ ] `npm run smoke:windows-update`
+
+`npm run release:smoke` is the normal local release validation path. Do not require local signed installer builds for RC validation.
+
+## CI Release Checks
+
+- [ ] Tagged release verifies `TAURI_SIGNING_PRIVATE_KEY` and, when used, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+- [ ] Windows NSIS installer is produced by the Tauri build in GitHub Actions.
+- [ ] `npm run release:verify-updater -- release-assets vX.Y.Z` passes for generated release assets.
+- [ ] GitHub Actions installs the newly built Windows installer into a temp directory and smokes the installed sidecar.
+- [ ] Update-over-existing smoke passes when a previous stable Windows installer is available.
 
 ## Privacy And Safety
 
-- [ ] No `.env`, API keys, cookies, bearer tokens, private resumes, generated PDFs, local databases, graph stores, vector stores, or packaged sidecar binaries are committed.
+- [ ] No `.env`, API keys, cookies, bearer tokens, private resumes, generated PDFs, local databases, graph stores, vector stores, private app data, or packaged sidecar binaries are committed.
+- [ ] Live-fire and test fixtures use fake `.test` identity data, not personal emails, phone numbers, or LinkedIn profiles.
 - [ ] Browser automation and auto-apply behavior is documented as experimental and opt-in.
 - [ ] Release notes describe JustHireMe as local-first and do not imply a hosted backend.
 - [ ] Release notes include SHA256 checksums for uploaded installer assets.
-- [ ] Tauri updater signing secrets are available in the release environment: `TAURI_SIGNING_PRIVATE_KEY` and, when used, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+- [ ] Tauri updater signing secrets live in the GitHub Actions release environment, not in local docs or committed files.
 - [ ] Tauri capabilities remain narrow; frontend code should not receive broad shell execution permissions.
 - [ ] The bundled sidecar listens on `127.0.0.1` and requires the runtime token for HTTP and WebSocket access.
-- [ ] macOS release notes tell users to drag `JustHireMe.app` from the DMG into `/Applications` or `~/Applications` before opening it. In-app updates cannot replace an app running from a mounted DMG or Gatekeeper App Translocation.
 
 ## Release Flow
 
 1. Update versions with `npm run version:bump -- X.Y.Z`.
-2. Run the required checks above.
-3. Create a tag like `v1.0.0`.
-4. For a quick local smoke test, run `npm run release:smoke` and launch `src-tauri/target/release/justhireme.exe`.
-5. For the standard Windows installer, run `npm run release:windows`.
-6. Push the tag and let the release workflow build, verify updater artifacts, and publish the GitHub Release from CI.
-7. Download and smoke-test the GitHub-built installer before sharing the release link widely.
-8. On macOS, first confirm a DMG-launched copy blocks in-app update with a clear "move app first" message instead of `Read-only file system (os error 30)`.
-9. On a machine with the previous release installed in a writable Applications folder, open the app, wait for the update prompt, install the update, restart, and confirm the app reports the new version while local app data remains intact.
+2. Run the required local checks above.
+3. Create a tag like `vX.Y.Z`.
+4. Push the tag and let the release workflow build, sign, verify updater artifacts, smoke the Windows installer, and publish the GitHub Release from CI.
+5. Download and smoke-test the GitHub-built Windows installer before sharing the release link widely.
+6. If a previous stable installer exists, confirm the in-app update installs the new version and preserves local app data.

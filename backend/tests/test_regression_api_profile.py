@@ -116,10 +116,10 @@ class RegressionTests(unittest.TestCase):
         from profile.ingestor import _parse_local
 
         markdown = """
-# Vasu DevS - Portfolio Content
+# Alex Example - Portfolio Content
 
 ## Hero Section
-- **Name:** Vasu DevS
+- **Name:** Alex Example
 - **Tagline:** A 21-year-old self-taught Full Stack AI Engineer based in India.
 
 ---
@@ -134,7 +134,7 @@ End-to-end build of a production-grade financial reporting platform.
 
 ## 02 / Selected Work (Featured Projects)
 ### 1. BranchGPT (Context Optimization / AI)
-**Live:** https://branchgpt.vasudev.live/ | **Video:** https://youtu.be/RB3zvAXbpL0
+**Live:** https://branchgpt.example.test/ | **Video:** https://video.example.test/demo
 **Summary:** Conversations are trees, not lists.
 **Highlights:**
 - Conversations as DAGs
@@ -157,25 +157,25 @@ End-to-end build of a production-grade financial reporting platform.
 ## 06 / Services (What I Build)
 - **AI Agents & Automation:** Multi-agent pipelines.
 ## 07 / Contact (Footer)
-- Email: siddhvasudev1402@gmail.com
+- Email: alex@example.test
 """
 
         profile = _parse_local(markdown)
 
-        self.assertEqual(profile.n, "Vasu DevS")
+        self.assertEqual(profile.n, "Alex Example")
         self.assertGreaterEqual(len(profile.skills), 8)
         self.assertEqual(profile.exp[0].role, "Full-Stack Engineer - Internal Finance & P&L Platform")
         self.assertIn("BranchGPT", [p.title for p in profile.projects])
         self.assertIn("Waldo", [p.title for p in profile.projects])
-        self.assertNotIn("siddhvasudev1402@gmail.com", profile.s)
+        self.assertNotIn("alex@example.test", profile.s)
         self.assertNotIn("Email:", profile.s)
 
     def test_resume_heuristic_keeps_project_bullets_and_education_details_together(self):
         from profile.ingestor import _parse_resume_heuristic
 
         raw = """
-Vasudev Siddh
-vasu@example.com
+Alex Example
+alex@example.test
 
 Skills
 React, TypeScript, FastAPI, PostgreSQL
@@ -184,27 +184,27 @@ Projects
 JustHireMe
 - Built a local-first job intelligence workbench.
 - Stack: React, TypeScript, FastAPI, PostgreSQL
-- GitHub: https://github.com/vasu-devs/JustHireMe
+- GitHub: https://github.com/alex-example/JustHireMe
 React
 Built graph ranking and resume generation workflows.
 BranchGPT - Git-like chat interface for conversation DAGs.
 Implemented branching, pruning, and context restore flows.
 
 Education
-Lovely Professional University
-Punjab
+Example University
+Example City
 CGPA 8.5
 """
 
         profile = _parse_resume_heuristic(raw)
         titles = [project.title for project in profile.projects]
 
-        self.assertEqual(profile.n, "Vasudev Siddh")
+        self.assertEqual(profile.n, "Alex Example")
         self.assertIn("JustHireMe", titles)
         self.assertIn("BranchGPT", titles)
         self.assertNotIn("React", titles)
         self.assertFalse(any(title.startswith("Built ") for title in titles))
-        self.assertEqual(profile.education, ["Lovely Professional University, Punjab, CGPA 8.5"])
+        self.assertEqual(profile.education, ["Example University - Example City, CGPA 8.5"])
 
     def test_profile_normalizer_does_not_keep_role_text_as_candidate_name(self):
         from models.schema import C

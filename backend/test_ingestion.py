@@ -8,7 +8,7 @@ from profile.ingestor import ingest
 
 # Ensure we have a sample text to ingest
 test_text = """
-Vasudev Siddh
+Alex Example
 AI Engineer
 Skills: Python, React, LangChain, Kuzu, LLMs
 Experience: Built JustHireMe, an autonomous job seeker.

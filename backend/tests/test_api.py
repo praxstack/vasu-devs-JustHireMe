@@ -875,7 +875,7 @@ class TestIngestionEndpoints(unittest.TestCase):
                 raise RuntimeError("github ingest crashed")
 
         with mock.patch.object(ingestion, "get_profile_service", return_value=FailingProfileService()):
-            resp = post("/api/v1/ingest/github", json={"username": "vasu-devs"})
+            resp = post("/api/v1/ingest/github", json={"username": "example-candidate"})
 
         self.assertEqual(resp.status_code, 502)
         self.assertIn("could not ingest github profile", resp.json()["detail"])

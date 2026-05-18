@@ -71,19 +71,19 @@ def test_resume_fallback_scrubs_contact_summary_and_project_noise():
     from generation.generators.resume import _fallback_package
 
     profile = {
-        "n": "Komalpreet Kaur",
+        "n": "Casey Example",
         "s": (
-            "Email: kaurkomalpreetsohal@gmail.com. Phone: +91 9451735039. "
-            "Links: https://github.com/Komalpreet2809/Vanta, https://github.com/Komalpreet2809/SOMA"
+            "Email: casey@example.test. Phone: +1 555 010 0001. "
+            "Links: https://github.com/example-candidate/Vanta, https://github.com/example-candidate/SOMA"
         ),
         "identity": {
-            "email": "kaurkomalpreetsohal@gmail.com",
-            "github_url": "https://github.com/Komalpreet2809",
+            "email": "casey@example.test",
+            "github_url": "https://github.com/example-candidate",
         },
         "skills": [{"n": "Python", "cat": "language"}, {"n": "FastAPI", "cat": "framework"}, {"n": "React", "cat": "framework"}],
         "projects": [
-            {"title": "conditioning.", "stack": ["FastAPI"], "repo": "https://github.com/Komalpreet2809/Vanta", "impact": "Deployed FastAPI backend."},
-            {"title": "Vanta", "stack": ["FastAPI", "React"], "repo": "https://github.com/Komalpreet2809/Vanta", "impact": "Deployed backend and frontend for an AI application."},
+            {"title": "conditioning.", "stack": ["FastAPI"], "repo": "https://github.com/example-candidate/Vanta", "impact": "Deployed FastAPI backend."},
+            {"title": "Vanta", "stack": ["FastAPI", "React"], "repo": "https://github.com/example-candidate/Vanta", "impact": "Deployed backend and frontend for an AI application."},
         ],
         "exp": [],
         "certifications": ["Social Networks - NPTEL Jan 2025 - Apr 2025", "Certificate Link"],
