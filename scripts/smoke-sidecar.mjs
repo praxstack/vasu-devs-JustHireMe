@@ -302,11 +302,20 @@ async function ensureVectorRuntime(port, token) {
     console.warn(message);
     return initial;
   }
-  const installed = await readApi(port, token, "/api/v1/runtime/vector/install", { method: "POST" });
-  if (!installed.ready) {
-    fail(`Vector runtime install did not become ready: ${JSON.stringify(installed)}`);
+  await readApi(port, token, "/api/v1/runtime/vector/install", { method: "POST" });
+  const deadline = Date.now() + 90_000;
+  let last = initial;
+  while (Date.now() < deadline) {
+    last = await readApi(port, token, "/api/v1/runtime/vector");
+    if (last.ready) {
+      return last;
+    }
+    if (last.progress?.status === "error") {
+      fail(`Vector runtime install failed: ${JSON.stringify(last)}`);
+    }
+    await sleep(500);
   }
-  return installed;
+  fail(`Vector runtime install did not become ready: ${JSON.stringify(last)}`);
 }
 
 const explicitSidecar = resolveExplicitSidecar();

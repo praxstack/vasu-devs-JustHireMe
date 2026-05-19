@@ -1,29 +1,42 @@
 from __future__ import annotations
 
-import asyncio
+import threading
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from data.vector.runtime import install_vector_runtime, vector_runtime_status
+from data.vector.runtime import install_vector_runtime, vector_runtime_progress, vector_runtime_status
 
 
 router = APIRouter(prefix="/api/v1/runtime", tags=["runtime"])
+_JOB_LOCK = threading.RLock()
+_INSTALL_JOB: threading.Thread | None = None
+_LAST_SYNC: dict | None = None
+_LAST_ERROR = ""
+
+
+def _job_running() -> bool:
+    return bool(_INSTALL_JOB and _INSTALL_JOB.is_alive())
 
 
 def _runtime_payload(sync: dict | None = None) -> dict:
     from data.vector import connection
 
     runtime = vector_runtime_status()
-    vector = connection.vector_status()
+    vector = connection.vector_status(refresh=False)
+    progress = vector_runtime_progress()
     ready = bool(runtime.get("ready")) and vector.get("status") == "ok"
     payload = {
         "ready": ready,
         "required": True,
         "runtime": runtime,
         "vector": vector,
+        "progress": progress | {"active": _job_running() or progress.get("active", False)},
     }
-    if sync is not None:
-        payload["sync"] = sync
+    current_sync = sync if sync is not None else _LAST_SYNC
+    if current_sync is not None:
+        payload["sync"] = current_sync
+    if _LAST_ERROR:
+        payload["install_error"] = _LAST_ERROR
     return payload
 
 
@@ -39,6 +52,28 @@ def _install_and_refresh() -> dict:
     return _runtime_payload(sync)
 
 
+def _install_worker() -> None:
+    global _LAST_ERROR, _LAST_SYNC
+
+    try:
+        _LAST_ERROR = ""
+        payload = _install_and_refresh()
+        _LAST_SYNC = payload.get("sync")
+    except Exception as exc:
+        _LAST_ERROR = str(exc)
+
+
+def _ensure_install_job() -> None:
+    global _INSTALL_JOB, _LAST_ERROR
+
+    with _JOB_LOCK:
+        if _job_running():
+            return
+        _LAST_ERROR = ""
+        _INSTALL_JOB = threading.Thread(target=_install_worker, name="jhm-vector-runtime-install", daemon=True)
+        _INSTALL_JOB.start()
+
+
 @router.get("/vector")
 async def get_vector_runtime():
     return _runtime_payload()
@@ -46,7 +81,5 @@ async def get_vector_runtime():
 
 @router.post("/vector/install")
 async def install_vector_runtime_endpoint():
-    try:
-        return await asyncio.to_thread(_install_and_refresh)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _ensure_install_job()
+    return _runtime_payload()

@@ -49,6 +49,8 @@ describe("FIX.md frontend stability contracts", () => {
   it("keeps semantic matching runtime mandatory", () => {
     expect(semanticRuntimePrompt).toContain("/api/v1/runtime/vector");
     expect(semanticRuntimePrompt).toContain("/api/v1/runtime/vector/install");
+    expect(semanticRuntimePrompt).toContain("installInFlightRef");
+    expect(semanticRuntimePrompt).toContain("formatBytes");
     expect(semanticRuntimePrompt).not.toContain("Later");
   });
 });

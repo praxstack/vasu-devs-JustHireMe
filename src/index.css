@@ -4772,25 +4772,36 @@ button.profile-map-node {
 
 .update-progress {
   position: relative;
-  height: 8px;
+  height: auto;
+  min-height: 8px;
   margin-top: 10px;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.update-progress::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 8px;
   border-radius: 999px;
   background: var(--paper-3);
 }
 
 .update-progress div {
-  height: 100%;
+  position: relative;
+  z-index: 1;
+  height: 8px;
   min-width: 10%;
-  border-radius: inherit;
+  border-radius: 999px;
   background: var(--accent);
   transition: width .18s ease;
 }
 
 .update-progress.is-indeterminate div {
-  width: 38%;
-  min-width: 38%;
+  width: 100%;
+  min-width: 100%;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 220% 100%;
   animation: updateSlide 1.2s ease-in-out infinite;
 }
 
@@ -4804,11 +4815,11 @@ button.profile-map-node {
 
 @keyframes updateSlide {
   0% {
-    transform: translateX(-120%);
+    background-position: 220% 0;
   }
 
   100% {
-    transform: translateX(280%);
+    background-position: -220% 0;
   }
 }
 

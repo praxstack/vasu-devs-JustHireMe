@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -16,8 +17,20 @@ from urllib.request import url2pathname
 
 _RELEASE_DOWNLOAD_BASE = "https://github.com/vasu-devs/JustHireMe/releases/latest/download"
 _INSTALL_LOCK = threading.RLock()
+_PROGRESS_LOCK = threading.RLock()
 _DLL_DIRS: set[str] = set()
 _DLL_HANDLES: list[object] = []
+_INSTALL_PROGRESS: dict = {
+    "status": "idle",
+    "message": "",
+    "percent": 0,
+    "downloaded": 0,
+    "total": 0,
+    "error": "",
+    "active": False,
+    "started_at": None,
+    "updated_at": None,
+}
 
 
 def sys_platform() -> str:
@@ -60,6 +73,24 @@ def vector_runtime_url() -> str:
     )
 
 
+def _set_progress(**updates) -> None:
+    with _PROGRESS_LOCK:
+        now = time.time()
+        if updates.get("status") in {"starting", "downloading", "extracting", "copying", "verifying", "syncing"}:
+            updates.setdefault("active", True)
+            if not _INSTALL_PROGRESS.get("started_at"):
+                updates.setdefault("started_at", now)
+        elif updates.get("status") in {"installed", "error", "idle"}:
+            updates.setdefault("active", False)
+        updates.setdefault("updated_at", now)
+        _INSTALL_PROGRESS.update(updates)
+
+
+def vector_runtime_progress() -> dict:
+    with _PROGRESS_LOCK:
+        return dict(_INSTALL_PROGRESS)
+
+
 def vector_runtime_roots(path: Path | None = None) -> list[Path]:
     root = path or vector_runtime_dir()
     return [
@@ -93,7 +124,10 @@ def add_vector_runtime_to_path(path: Path | None = None) -> None:
 
 
 def vector_runtime_ready(path: Path | None = None) -> bool:
-    add_vector_runtime_to_path(path)
+    root = path or vector_runtime_dir()
+    if getattr(sys, "frozen", False) and not any((candidate / "lancedb" / "__init__.py").exists() for candidate in vector_runtime_roots(root)):
+        return False
+    add_vector_runtime_to_path(root)
     try:
         return bool(importlib.util.find_spec("lancedb") and importlib.util.find_spec("pyarrow"))
     except (ImportError, ValueError, AttributeError):
@@ -111,17 +145,24 @@ def _archive_payload_dir(extract_dir: Path) -> Path | None:
 def _safe_extract(archive_path: Path, extract_dir: Path) -> None:
     root = extract_dir.resolve()
     with zipfile.ZipFile(archive_path) as archive:
-        for member in archive.infolist():
+        members = archive.infolist()
+        total = max(1, len(members))
+        for index, member in enumerate(members, start=1):
             target = (extract_dir / member.filename).resolve()
             if root != target and root not in target.parents:
                 raise RuntimeError("Downloaded vector runtime archive contains an unsafe path.")
-        archive.extractall(extract_dir)
+            archive.extract(member, extract_dir)
+            _set_progress(
+                status="extracting",
+                message="Unpacking resume matching runtime.",
+                percent=min(84, 70 + round((index / total) * 14)),
+            )
 
 
 def _download(url: str, archive_path: Path) -> None:
     direct_path = Path(url)
     if direct_path.exists():
-        shutil.copy2(direct_path, archive_path)
+        _copy_file_with_progress(direct_path, archive_path)
         return
     parsed = urlparse(url)
     if parsed.scheme in {"", "file"}:
@@ -129,45 +170,170 @@ def _download(url: str, archive_path: Path) -> None:
         if os.name == "nt" and parsed.scheme == "file" and parsed.netloc:
             source = Path(f"//{parsed.netloc}{url2pathname(parsed.path)}")
         if source.exists():
-            shutil.copy2(source, archive_path)
+            _copy_file_with_progress(source, archive_path)
             return
-    urllib.request.urlretrieve(url, archive_path)
+
+    request = urllib.request.Request(url, headers={"User-Agent": "JustHireMe-runtime-installer"})
+    with urllib.request.urlopen(request, timeout=60) as response, archive_path.open("wb") as target:
+        total = int(response.headers.get("Content-Length") or 0)
+        _stream_to_file(response, target, total)
+
+
+def _copy_file_with_progress(source: Path, target: Path) -> None:
+    total = source.stat().st_size
+    with source.open("rb") as reader, target.open("wb") as writer:
+        _stream_to_file(reader, writer, total)
+    shutil.copystat(source, target)
+
+
+def _stream_to_file(reader, writer, total: int) -> None:
+    downloaded = 0
+    _set_progress(
+        status="downloading",
+        message="Downloading resume matching runtime.",
+        percent=1,
+        downloaded=0,
+        total=total,
+        error="",
+    )
+    while True:
+        chunk = reader.read(1024 * 1024)
+        if not chunk:
+            break
+        writer.write(chunk)
+        downloaded += len(chunk)
+        percent = min(70, max(1, round((downloaded / total) * 70))) if total else min(65, _INSTALL_PROGRESS.get("percent", 1) + 1)
+        _set_progress(
+            status="downloading",
+            message="Downloading resume matching runtime.",
+            percent=percent,
+            downloaded=downloaded,
+            total=total,
+        )
+
+
+def _directory_size(path: Path) -> int:
+    total = 0
+    for source in path.rglob("*"):
+        if source.is_file() and not source.is_symlink():
+            total += source.stat().st_size
+    return total
+
+
+def _copy_payload(payload: Path, runtime_dir: Path) -> None:
+    if runtime_dir.exists():
+        shutil.rmtree(runtime_dir)
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    total = max(1, _directory_size(payload))
+    copied = 0
+    for source in payload.rglob("*"):
+        target = runtime_dir / source.relative_to(payload)
+        if source.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_symlink():
+            if target.exists():
+                target.unlink()
+            os.symlink(os.readlink(source), target)
+            continue
+        with source.open("rb") as reader, target.open("wb") as writer:
+            while True:
+                chunk = reader.read(1024 * 1024)
+                if not chunk:
+                    break
+                writer.write(chunk)
+                copied += len(chunk)
+                _set_progress(
+                    status="copying",
+                    message="Installing resume matching runtime.",
+                    percent=min(94, 84 + round((copied / total) * 10)),
+                )
+        shutil.copystat(source, target)
 
 
 def install_vector_runtime() -> Path:
     with _INSTALL_LOCK:
         runtime_dir = vector_runtime_dir()
         if vector_runtime_ready(runtime_dir):
+            _set_progress(
+                status="installed",
+                message="Resume matching runtime is installed.",
+                percent=100,
+                downloaded=0,
+                total=0,
+                error="",
+            )
             return runtime_dir
 
         runtime_dir.parent.mkdir(parents=True, exist_ok=True)
         url = vector_runtime_url()
-        with tempfile.TemporaryDirectory(prefix="jhm-vector-runtime-") as tmp:
-            tmp_dir = Path(tmp)
-            archive_path = tmp_dir / vector_runtime_asset_name()
-            try:
-                _download(url, archive_path)
-                extract_dir = tmp_dir / "extract"
-                extract_dir.mkdir(parents=True, exist_ok=True)
-                _safe_extract(archive_path, extract_dir)
-            except Exception as exc:
-                raise RuntimeError(
-                    "The semantic matching engine must be installed before JustHireMe can continue. "
-                    f"Could not download the vector runtime from {url}."
-                ) from exc
+        _set_progress(
+            status="starting",
+            message="Preparing resume matching runtime install.",
+            percent=0,
+            downloaded=0,
+            total=0,
+            error="",
+            started_at=time.time(),
+        )
+        try:
+            with tempfile.TemporaryDirectory(prefix="jhm-vector-runtime-") as tmp:
+                tmp_dir = Path(tmp)
+                archive_path = tmp_dir / vector_runtime_asset_name()
+                try:
+                    _download(url, archive_path)
+                    extract_dir = tmp_dir / "extract"
+                    extract_dir.mkdir(parents=True, exist_ok=True)
+                    _set_progress(
+                        status="extracting",
+                        message="Unpacking resume matching runtime.",
+                        percent=70,
+                    )
+                    _safe_extract(archive_path, extract_dir)
+                except Exception as exc:
+                    error = (
+                        "The semantic matching engine must be installed before JustHireMe can continue. "
+                        f"Could not download the vector runtime from {url}."
+                    )
+                    _set_progress(status="error", message=error, error=error)
+                    raise RuntimeError(error) from exc
 
-            payload = _archive_payload_dir(extract_dir)
-            if payload is None:
-                raise RuntimeError("Downloaded vector runtime archive did not contain LanceDB and PyArrow.")
+                payload = _archive_payload_dir(extract_dir)
+                if payload is None:
+                    error = "Downloaded vector runtime archive did not contain LanceDB and PyArrow."
+                    _set_progress(status="error", message=error, error=error)
+                    raise RuntimeError(error)
 
-            if runtime_dir.exists():
-                shutil.rmtree(runtime_dir)
-            shutil.copytree(payload, runtime_dir)
+                _set_progress(
+                    status="copying",
+                    message="Installing resume matching runtime.",
+                    percent=84,
+                )
+                _copy_payload(payload, runtime_dir)
 
-        add_vector_runtime_to_path(runtime_dir)
-        if not vector_runtime_ready(runtime_dir):
-            raise RuntimeError("Vector runtime installation finished, but LanceDB or PyArrow could not be imported.")
-        return runtime_dir
+            _set_progress(status="verifying", message="Verifying resume matching runtime.", percent=95)
+            add_vector_runtime_to_path(runtime_dir)
+            if not vector_runtime_ready(runtime_dir):
+                error = "Vector runtime installation finished, but LanceDB or PyArrow could not be imported."
+                _set_progress(status="error", message=error, error=error)
+                raise RuntimeError(error)
+            _set_progress(
+                status="installed",
+                message="Resume matching runtime is ready.",
+                percent=100,
+                downloaded=0,
+                total=0,
+                error="",
+            )
+            return runtime_dir
+        except Exception as exc:
+            progress = vector_runtime_progress()
+            if progress.get("status") != "error":
+                error = str(exc)
+                _set_progress(status="error", message=error, error=error)
+            raise
 
 
 def vector_runtime_status() -> dict:

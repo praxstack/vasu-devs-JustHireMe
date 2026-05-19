@@ -60,6 +60,7 @@ def test_vector_status_reports_disabled_for_null_store(monkeypatch):
     from data.vector import connection
 
     monkeypatch.setattr(connection, "vec", connection.NullVectorStore("LanceDB not bundled"))
+    monkeypatch.setattr(connection, "vector_runtime_ready", lambda: False)
 
     status = connection.vector_status()
 

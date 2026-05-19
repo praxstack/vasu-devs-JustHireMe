@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApiFetch } from "../../types";
+
+type RuntimeProgress = {
+  status?: string;
+  message?: string;
+  percent?: number;
+  downloaded?: number;
+  total?: number;
+  error?: string;
+  active?: boolean;
+  started_at?: number | null;
+  updated_at?: number | null;
+};
 
 type RuntimePayload = {
   ready?: boolean;
@@ -13,80 +25,204 @@ type RuntimePayload = {
     status?: string;
     error?: string;
   };
+  progress?: RuntimeProgress;
   sync?: {
     status?: string;
     synced?: number;
     error?: string;
   };
+  install_error?: string;
 };
 
-type PromptState = "checking" | "required" | "installing" | "ready" | "error";
+type PromptState = "checking" | "waiting" | "required" | "installing" | "ready" | "error";
 
-function statusMessage(payload: RuntimePayload | null, error: string) {
+const ACTIVE_PROGRESS = new Set(["starting", "downloading", "extracting", "copying", "verifying", "syncing"]);
+
+function formatBytes(value: number) {
+  if (!value) return "0 MB";
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "a moment";
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
+  return `${Math.round(seconds / 60)} min`;
+}
+
+function isActiveProgress(progress?: RuntimeProgress) {
+  return Boolean(progress?.active || (progress?.status && ACTIVE_PROGRESS.has(progress.status)));
+}
+
+function isBackendConnectivityError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes("local backend timed out") || normalized.includes("local backend is unreachable") || normalized.includes("failed to fetch");
+}
+
+function statusMessage(state: PromptState, payload: RuntimePayload | null, error: string) {
+  if (state === "waiting") {
+    return error
+      ? `${error} Retrying automatically while the local backend starts.`
+      : "Waiting for the local backend to start before installing resume matching.";
+  }
+  if (state === "installing") {
+    return payload?.progress?.message || "Installing LanceDB, PyArrow, and vector search support.";
+  }
   if (error) return error;
-  const vectorError = payload?.vector?.error;
+  const vectorError = payload?.vector?.error || payload?.install_error;
   if (vectorError) return vectorError;
   const asset = payload?.runtime?.asset || "semantic runtime";
   return `${asset} is required for resume matching and identity graph search.`;
+}
+
+function progressLabel(state: PromptState, progress: RuntimeProgress | undefined, now: number) {
+  if (state === "checking") return "Checking semantic runtime.";
+  if (state === "waiting") return "Waiting for the local backend; retrying every few seconds.";
+  if (!progress) return "Preparing resume matching runtime.";
+
+  const message = progress.message || "Installing resume matching runtime.";
+  const percent = Number.isFinite(progress.percent) ? Math.min(100, Math.max(0, Math.round(progress.percent || 0))) : null;
+  const downloaded = progress.downloaded || 0;
+  const total = progress.total || 0;
+  const startedAt = progress.started_at ? progress.started_at * 1000 : 0;
+  const elapsedSeconds = startedAt ? Math.max(1, (now - startedAt) / 1000) : 0;
+  const bytesPerSecond = elapsedSeconds > 0 && downloaded > 0 ? downloaded / elapsedSeconds : 0;
+  const etaSeconds = total && bytesPerSecond > 0 ? Math.max(0, (total - downloaded) / bytesPerSecond) : null;
+
+  if (total && downloaded) {
+    const eta = etaSeconds !== null ? `, about ${formatDuration(etaSeconds)} left` : "";
+    return `${message} ${percent ?? 0}% - ${formatBytes(downloaded)} of ${formatBytes(total)}${eta}`;
+  }
+  if (downloaded) return `${message} ${formatBytes(downloaded)} downloaded - estimating time remaining.`;
+  if (percent !== null && percent > 0) return `${message} ${percent}%.`;
+  return message;
 }
 
 export function SemanticRuntimePrompt({ api }: { api: ApiFetch }) {
   const [state, setState] = useState<PromptState>("checking");
   const [payload, setPayload] = useState<RuntimePayload | null>(null);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const stateRef = useRef<PromptState>("checking");
+  const installInFlightRef = useRef(false);
+  const readyDispatchedRef = useRef(false);
+  const statusRequestRef = useRef(0);
+  const consecutiveStatusFailuresRef = useRef(0);
+
+  const updateState = useCallback((next: PromptState) => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    if (state !== "installing") return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [state]);
+
+  const markReady = useCallback(() => {
+    updateState("ready");
+    if (readyDispatchedRef.current) return;
+    readyDispatchedRef.current = true;
+    window.dispatchEvent(new CustomEvent("subsystems-refresh"));
+    window.dispatchEvent(new CustomEvent("graph-refresh"));
+  }, [updateState]);
+
+  const applyPayload = useCallback((next: RuntimePayload) => {
+    consecutiveStatusFailuresRef.current = 0;
+    setPayload(next);
+    setError("");
+
+    if (next.ready) {
+      markReady();
+      return;
+    }
+    if (isActiveProgress(next.progress)) {
+      updateState("installing");
+      return;
+    }
+    if (next.progress?.status === "error") {
+      setError(next.progress.error || next.progress.message || next.install_error || "Resume matching runtime install failed.");
+      updateState("error");
+      return;
+    }
+    updateState("required");
+  }, [markReady, updateState]);
 
   const loadStatus = useCallback(async () => {
+    const requestId = statusRequestRef.current + 1;
+    statusRequestRef.current = requestId;
     try {
       const response = await api("/api/v1/runtime/vector", { timeoutMs: 15000 });
       if (!response.ok) throw new Error(`Runtime check failed with HTTP ${response.status}.`);
       const next = await response.json() as RuntimePayload;
-      setPayload(next);
-      setError("");
-      setState(next.ready ? "ready" : "required");
+      if (requestId !== statusRequestRef.current) return;
+      applyPayload(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setState("error");
+      if (requestId !== statusRequestRef.current) return;
+      const message = err instanceof Error ? err.message : String(err);
+      consecutiveStatusFailuresRef.current += 1;
+      setError(message);
+      if (stateRef.current === "installing" && consecutiveStatusFailuresRef.current < 4) {
+        return;
+      }
+      updateState(isBackendConnectivityError(message) ? "waiting" : "error");
     }
-  }, [api]);
+  }, [api, applyPayload, updateState]);
 
   useEffect(() => {
     let cancelled = false;
-    const check = async () => {
-      if (cancelled) return;
+    let timer = 0;
+
+    const tick = async () => {
       await loadStatus();
+      if (cancelled) return;
+      const current = stateRef.current;
+      const delay = current === "installing" ? 1000 : current === "waiting" || current === "checking" ? 2500 : 30000;
+      timer = window.setTimeout(tick, delay);
     };
-    void check();
-    const timer = window.setInterval(() => {
-      if (state !== "installing") void check();
-    }, 30000);
+
+    void tick();
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
-  }, [loadStatus, state]);
+  }, [loadStatus]);
 
   const install = async () => {
-    setState("installing");
+    if (installInFlightRef.current || stateRef.current === "installing") return;
+    installInFlightRef.current = true;
+    statusRequestRef.current += 1;
+    updateState("installing");
     setError("");
+    setNow(Date.now());
     try {
-      const response = await api("/api/v1/runtime/vector/install", { method: "POST", timeoutMs: 10 * 60 * 1000 });
+      const response = await api("/api/v1/runtime/vector/install", { method: "POST", timeoutMs: 30000 });
       const next = await response.json().catch(() => ({})) as RuntimePayload & { detail?: string };
       if (!response.ok) throw new Error(next.detail || `Runtime install failed with HTTP ${response.status}.`);
-      setPayload(next);
-      if (!next.ready) {
-        throw new Error(next.vector?.error || "The semantic engine installed but did not become ready.");
-      }
-      setState("ready");
-      window.dispatchEvent(new CustomEvent("subsystems-refresh"));
-      window.dispatchEvent(new CustomEvent("graph-refresh"));
+      applyPayload(next);
+      window.setTimeout(() => {
+        void loadStatus();
+      }, 600);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setState("error");
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      updateState(isBackendConnectivityError(message) ? "waiting" : "error");
+    } finally {
+      installInFlightRef.current = false;
     }
   };
 
-  const message = useMemo(() => statusMessage(payload, error), [payload, error]);
-  const isBusy = state === "checking" || state === "installing";
+  const message = useMemo(() => statusMessage(state, payload, error), [state, payload, error]);
+  const label = useMemo(() => progressLabel(state, payload?.progress, now), [state, payload?.progress, now]);
+  const progress = payload?.progress;
+  const progressPercent = Number.isFinite(progress?.percent) ? Math.min(100, Math.max(0, Math.round(progress?.percent || 0))) : null;
+  const isBusy = state === "checking" || state === "waiting" || state === "installing";
+  const canInstall = state === "required" || (state === "error" && Boolean(payload));
+  const title = state === "waiting" ? "Starting resume matching service" : "Install resume matching runtime";
 
   if (state === "ready") return null;
 
@@ -96,12 +232,12 @@ export function SemanticRuntimePrompt({ api }: { api: ApiFetch }) {
         <div className="semantic-runtime-mark" aria-hidden="true">S</div>
         <div>
           <div className="eyebrow">Required semantic engine</div>
-          <h2 id="semantic-runtime-title">Install resume matching runtime</h2>
-          <p>{message}</p>
+          <h2 id="semantic-runtime-title">{title}</h2>
+          <p className={state === "error" ? "update-error" : undefined}>{message}</p>
           {isBusy && (
-            <div className="update-progress is-indeterminate">
-              <div />
-              <span>{state === "installing" ? "Downloading and installing LanceDB, PyArrow, and vector search support." : "Checking semantic runtime."}</span>
+            <div className={`update-progress ${progressPercent === null || state !== "installing" ? "is-indeterminate" : ""}`}>
+              <div style={progressPercent !== null && state === "installing" ? { width: `${progressPercent}%` } : undefined} />
+              <span>{label}</span>
             </div>
           )}
           {payload?.sync?.status === "ok" && (
@@ -109,11 +245,13 @@ export function SemanticRuntimePrompt({ api }: { api: ApiFetch }) {
           )}
         </div>
         <div className="semantic-runtime-actions">
-          <button className="btn btn-accent" onClick={install} disabled={isBusy}>
-            {state === "installing" ? "Installing..." : "Install now"}
-          </button>
-          {state === "error" && (
-            <button className="btn btn-ghost" onClick={() => void loadStatus()} disabled={isBusy}>
+          {canInstall && (
+            <button className="btn btn-accent" onClick={install} disabled={isBusy}>
+              Install now
+            </button>
+          )}
+          {(state === "waiting" || state === "error") && (
+            <button className="btn btn-ghost" onClick={() => void loadStatus()}>
               Retry check
             </button>
           )}

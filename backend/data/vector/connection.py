@@ -3,10 +3,11 @@ import importlib
 import logging
 
 import os
+import sys
 import threading
 
 from core.logging import get_logger
-from data.vector.runtime import add_vector_runtime_to_path, vector_runtime_ready
+from data.vector.runtime import add_vector_runtime_to_path, vector_runtime_ready, vector_runtime_roots
 
 _log = get_logger(__name__)
 lancedb = None
@@ -48,12 +49,35 @@ class NullVectorStore:
         return None
 
 
+def _usable_lancedb_module(module) -> bool:
+    return module is not None and callable(getattr(module, "connect", None))
+
+
+def _clear_lancedb_modules() -> None:
+    for name in list(sys.modules):
+        if name == "lancedb" or name.startswith("lancedb."):
+            sys.modules.pop(name, None)
+
+
+def _runtime_package_installed() -> bool:
+    return any((root / "lancedb" / "__init__.py").exists() for root in vector_runtime_roots())
+
+
 def _try_import_lancedb(*, log_warning: bool = True):
     global lancedb, _LANCEDB_IMPORT_ERROR
     add_vector_runtime_to_path()
+    importlib.invalidate_caches()
+    if getattr(sys, "frozen", False) and not _runtime_package_installed():
+        _clear_lancedb_modules()
+        lancedb = None
+        _LANCEDB_IMPORT_ERROR = "LanceDB runtime is not installed"
+        return None
+    if not _usable_lancedb_module(sys.modules.get("lancedb")):
+        _clear_lancedb_modules()
     try:
         module = importlib.import_module("lancedb")
     except Exception as exc:
+        _clear_lancedb_modules()
         if log_warning:
             logging.getLogger(__name__).warning(
                 "suppressed exception in backend/data/vector/connection.py:_try_import_lancedb: %s",
@@ -61,6 +85,12 @@ def _try_import_lancedb(*, log_warning: bool = True):
             )
         lancedb = None
         _LANCEDB_IMPORT_ERROR = str(exc)
+        return None
+    if not _usable_lancedb_module(module):
+        location = getattr(module, "__file__", "") or ",".join(map(str, getattr(module, "__path__", []))) or "unknown location"
+        _clear_lancedb_modules()
+        lancedb = None
+        _LANCEDB_IMPORT_ERROR = f"LanceDB runtime is incomplete at {location}"
         return None
     lancedb = module
     _LANCEDB_IMPORT_ERROR = ""
@@ -73,7 +103,7 @@ def _connect_vector_store():
         BASE_DIR = default_base_dir()
         VECTOR_DIR = default_vector_dir()
         os.makedirs(VECTOR_DIR, exist_ok=True)
-        module = lancedb or _try_import_lancedb()
+        module = lancedb if _usable_lancedb_module(lancedb) else _try_import_lancedb()
         if module is None:
             raise RuntimeError(_LANCEDB_IMPORT_ERROR or "LanceDB is not available")
         return module.connect(VECTOR_DIR)
