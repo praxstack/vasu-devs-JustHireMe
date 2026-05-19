@@ -31,5 +31,7 @@ function run(name, command, args) {
   });
 }
 
-await Promise.all(commands.map(([name, command, args]) => run(name, command, args)));
+for (const [name, command, args] of commands) {
+  await run(name, command, args);
+}
 process.exit(failed ? 1 : 0);

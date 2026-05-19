@@ -316,7 +316,9 @@ def install_vector_runtime() -> Path:
     with _INSTALL_LOCK:
         runtime_dir = vector_runtime_dir()
         browser_dir = browser_runtime_dir()
-        if runtime_pack_ready():
+        vector_ready_before = vector_runtime_ready(runtime_dir)
+        browser_ready_before = browser_runtime_ready(browser_dir)
+        if vector_ready_before and (browser_ready_before or _legacy_vector_runtime_override()):
             _set_progress(
                 status="installed",
                 message="Required runtime pack is installed.",
@@ -371,19 +373,26 @@ def install_vector_runtime() -> Path:
                     _set_progress(status="error", message=error, error=error)
                     raise RuntimeError(error)
 
-                _set_progress(
-                    status="copying",
-                    message="Installing LanceDB and vector search support.",
-                    percent=84,
-                )
-                _copy_payload(
-                    vector_payload,
-                    runtime_dir,
-                    message="Installing LanceDB and vector search support.",
-                    start_percent=84,
-                    end_percent=92,
-                )
-                if browser_payload is not None:
+                if vector_ready_before:
+                    _set_progress(
+                        status="copying",
+                        message="Keeping existing LanceDB vector runtime.",
+                        percent=92,
+                    )
+                else:
+                    _set_progress(
+                        status="copying",
+                        message="Installing LanceDB and vector search support.",
+                        percent=84,
+                    )
+                    _copy_payload(
+                        vector_payload,
+                        runtime_dir,
+                        message="Installing LanceDB and vector search support.",
+                        start_percent=84,
+                        end_percent=92,
+                    )
+                if browser_payload is not None and not browser_ready_before:
                     _set_progress(
                         status="copying",
                         message="Installing Playwright Chromium browser support.",
@@ -395,6 +404,12 @@ def install_vector_runtime() -> Path:
                         message="Installing Playwright Chromium browser support.",
                         start_percent=92,
                         end_percent=98,
+                    )
+                elif browser_ready_before:
+                    _set_progress(
+                        status="copying",
+                        message="Keeping existing Playwright Chromium runtime.",
+                        percent=98,
                     )
 
             _set_progress(status="verifying", message="Verifying JustHireMe runtime pack.", percent=98)

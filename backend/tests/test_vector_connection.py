@@ -146,6 +146,40 @@ def test_runtime_pack_payload_detection_finds_vector_and_browser(tmp_path):
     assert browser_payload == browser
 
 
+def test_runtime_pack_install_skips_ready_vector_runtime(monkeypatch, tmp_path):
+    from data.vector import runtime
+
+    runtime_dir = tmp_path / "vector-runtime"
+    browser_dir = tmp_path / "browser-runtime" / "ms-playwright"
+    vector_payload = tmp_path / "payload" / "vector-runtime"
+    browser_payload = tmp_path / "payload" / "browser-runtime" / "ms-playwright"
+    vector_payload.mkdir(parents=True)
+    browser_payload.mkdir(parents=True)
+    browser_ready = {"value": False}
+    copied: list[Path] = []
+
+    monkeypatch.setenv("JHM_VECTOR_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("JHM_BROWSER_RUNTIME_DIR", str(browser_dir))
+    monkeypatch.setenv("JHM_RUNTIME_PACK_URL", str(tmp_path / "runtime-pack.zip"))
+    monkeypatch.setattr(runtime, "vector_runtime_ready", lambda _path=None: True)
+    monkeypatch.setattr(runtime, "browser_runtime_ready", lambda _path=None: browser_ready["value"])
+    monkeypatch.setattr(runtime, "_download", lambda _url, _archive_path: None)
+    monkeypatch.setattr(runtime, "_safe_extract", lambda _archive_path, _extract_dir: None)
+    monkeypatch.setattr(runtime, "_runtime_pack_payloads", lambda _extract_dir: (vector_payload, browser_payload))
+
+    def copy_payload(_payload: Path, target: Path, **_kwargs):
+        if target == runtime_dir:
+            raise AssertionError("ready vector runtime should not be recopied over loaded native modules")
+        copied.append(target)
+        if target == browser_dir:
+            browser_ready["value"] = True
+
+    monkeypatch.setattr(runtime, "_copy_payload", copy_payload)
+
+    assert runtime.install_vector_runtime() == runtime_dir
+    assert copied == [browser_dir]
+
+
 def test_hash_embedding_fallback_reports_ok(monkeypatch):
     from data.vector import embeddings
 
