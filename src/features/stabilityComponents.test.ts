@@ -57,6 +57,7 @@ describe("FIX.md frontend stability contracts", () => {
     expect(semanticRuntimePrompt).toContain("Restart JustHireMe");
     expect(semanticRuntimePrompt).toContain("Playwright Chromium");
     expect(semanticRuntimePrompt).not.toContain("Later");
+    expect(semanticRuntimePrompt).not.toContain("initialized once per interpreter");
   });
 
   it("keeps updater reachable above mandatory runtime blockers", () => {

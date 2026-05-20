@@ -59,17 +59,11 @@ function isActiveProgress(progress?: RuntimeProgress) {
   return Boolean(progress?.active || (progress?.status && ACTIVE_PROGRESS.has(progress.status)));
 }
 
-function isPyo3RestartMessage(message?: string) {
-  return Boolean(message?.toLowerCase().includes("initialized once per interpreter"));
-}
-
 function runtimeNeedsRestart(payload: RuntimePayload | null) {
   return Boolean(
     payload?.restart_required ||
     payload?.runtime?.restart_required ||
-    payload?.vector?.restart_required ||
-    isPyo3RestartMessage(payload?.install_error) ||
-    isPyo3RestartMessage(payload?.progress?.error),
+    payload?.vector?.restart_required,
   );
 }
 

@@ -13,7 +13,8 @@ _log = get_logger(__name__)
 lancedb = None
 _LANCEDB_IMPORT_ERROR = ""
 _LANCEDB_RESTART_REQUIRED = False
-PYO3_RESTART_MESSAGE = "Runtime pack is installed. Restart JustHireMe to finish loading vector search."
+_LANCEDB_PYO3_DEGRADED = False
+PYO3_RESTART_MESSAGE = "Native vector search is temporarily unavailable; JustHireMe will continue with deterministic matching."
 
 
 def default_base_dir() -> str:
@@ -72,19 +73,23 @@ def _is_pyo3_reinit_error(exc: BaseException) -> bool:
 
 
 def _set_lancedb_module(module):
-    global lancedb, _LANCEDB_IMPORT_ERROR, _LANCEDB_RESTART_REQUIRED
+    global lancedb, _LANCEDB_IMPORT_ERROR, _LANCEDB_RESTART_REQUIRED, _LANCEDB_PYO3_DEGRADED
     lancedb = module
     _LANCEDB_IMPORT_ERROR = ""
     _LANCEDB_RESTART_REQUIRED = False
+    _LANCEDB_PYO3_DEGRADED = False
     return module
 
 
 def _try_import_lancedb(*, log_warning: bool = True):
-    global lancedb, _LANCEDB_IMPORT_ERROR, _LANCEDB_RESTART_REQUIRED
+    global lancedb, _LANCEDB_IMPORT_ERROR, _LANCEDB_RESTART_REQUIRED, _LANCEDB_PYO3_DEGRADED
     if _usable_lancedb_module(lancedb):
         _LANCEDB_IMPORT_ERROR = ""
         _LANCEDB_RESTART_REQUIRED = False
+        _LANCEDB_PYO3_DEGRADED = False
         return lancedb
+    if _LANCEDB_PYO3_DEGRADED:
+        return None
     add_vector_runtime_to_path()
     importlib.invalidate_caches()
     if getattr(sys, "frozen", False) and not _runtime_package_installed():
@@ -92,6 +97,7 @@ def _try_import_lancedb(*, log_warning: bool = True):
         lancedb = None
         _LANCEDB_IMPORT_ERROR = "LanceDB runtime is not installed"
         _LANCEDB_RESTART_REQUIRED = False
+        _LANCEDB_PYO3_DEGRADED = False
         return None
     if not _usable_lancedb_module(sys.modules.get("lancedb")):
         _clear_lancedb_modules()
@@ -105,18 +111,22 @@ def _try_import_lancedb(*, log_warning: bool = True):
             _log.info("lancedb import raised PyO3 reinit warning but the cached module is usable; continuing")
             return _set_lancedb_module(cached)
         _clear_lancedb_modules()
-        if log_warning:
-            logging.getLogger(__name__).warning(
-                "suppressed exception in backend/data/vector/connection.py:_try_import_lancedb: %s",
-                exc,
-            )
         lancedb = None
         if _is_pyo3_reinit_error(exc):
             _LANCEDB_IMPORT_ERROR = PYO3_RESTART_MESSAGE
-            _LANCEDB_RESTART_REQUIRED = True
+            _LANCEDB_RESTART_REQUIRED = False
+            _LANCEDB_PYO3_DEGRADED = True
+            if log_warning:
+                _log.info("native vector search disabled for this session after PyO3 reinit guard: %s", exc)
         else:
+            if log_warning:
+                logging.getLogger(__name__).warning(
+                    "lancedb import failed: %s",
+                    exc,
+                )
             _LANCEDB_IMPORT_ERROR = str(exc)
             _LANCEDB_RESTART_REQUIRED = False
+            _LANCEDB_PYO3_DEGRADED = False
         return None
     if not _usable_lancedb_module(module):
         location = getattr(module, "__file__", "") or ",".join(map(str, getattr(module, "__path__", []))) or "unknown location"
@@ -124,6 +134,7 @@ def _try_import_lancedb(*, log_warning: bool = True):
         lancedb = None
         _LANCEDB_IMPORT_ERROR = f"LanceDB runtime is incomplete at {location}"
         _LANCEDB_RESTART_REQUIRED = False
+        _LANCEDB_PYO3_DEGRADED = False
         return None
     return _set_lancedb_module(module)
 
@@ -157,13 +168,15 @@ def refresh_vector_store() -> dict:
 def vector_status(*, refresh: bool = True) -> dict:
     with _vector_lock:
         if getattr(vec, "available", True) is False:
-            if refresh and not _LANCEDB_RESTART_REQUIRED and vector_runtime_ready():
+            if refresh and not _LANCEDB_RESTART_REQUIRED and not _LANCEDB_PYO3_DEGRADED and vector_runtime_ready():
                 return refresh_vector_store()
             status = {
                 "status": "disabled",
                 "error": getattr(vec, "reason", "") or "vector store is unavailable",
                 "tables": [],
             }
+            if _LANCEDB_PYO3_DEGRADED:
+                status["mode"] = "fallback"
             if _LANCEDB_RESTART_REQUIRED:
                 status["restart_required"] = True
             return status

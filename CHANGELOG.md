@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.20 - 2026-05-20
+
+- Fixed the PyO3/LanceDB startup path so native vector import failures degrade to deterministic matching instead of blocking the app behind a restart modal.
+- Removed the frontend PyO3 string heuristic that could force a restart even when the backend did not request one.
+- Kept the runtime pack installer mandatory only when the pack is actually missing.
+
 ## 1.0.18 - 2026-05-20
 
 - Fixed the Tauri ACL regression that blocked runtime-pack and updater restarts.
