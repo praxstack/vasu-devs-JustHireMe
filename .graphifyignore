@@ -43,3 +43,12 @@ src-tauri/Cargo.lock
 # Graphify's own output + caches
 graphify-out/
 .git/
+
+# pytest local temp fallback
+backend/.pytest-basetemp/
+
+# Local caches / scratch (working-tree noise, not architecture)
+backend/.hf-cache/
+backend/build_cache/
+**/.tmp/
+.tmp/
