@@ -211,7 +211,7 @@ def normalize_skills(raw_items: list[Any]) -> list[dict[str, str]]:
     for raw in raw_items:
         item = _as_dict(raw)
         value = item.get("name", item.get("n", raw if isinstance(raw, str) else ""))
-        category = _clean_text(item.get("category", item.get("cat", "general"))) or "general"
+        category = _clean_inline_text(item.get("category", item.get("cat", "general"))) or "general"
         for skill in split_skill_names(str(value or "")):
             if not _valid_skill(skill):
                 continue
@@ -224,7 +224,7 @@ def normalize_skills(raw_items: list[Any]) -> list[dict[str, str]]:
 
 
 def split_skill_names(value: str) -> list[str]:
-    clean = _clean_text(re.sub(r"^[A-Za-z /&+-]{2,35}:\s*", "", value or ""))
+    clean = _clean_inline_text(re.sub(r"^[A-Za-z /&+-]{2,35}:\s*", "", value or ""))
     if not clean:
         return []
     if ACTION_SENTENCE_RE.search(clean) and len(clean.split()) > 5:
@@ -258,8 +258,8 @@ def normalize_experiences(raw_items: list[Any]) -> list[dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
     for raw in raw_items:
         item = _as_dict(raw)
-        role = _clean_text(str(item.get("role") or "")).strip()
-        co = _clean_text(str(item.get("company") or item.get("co") or "")).strip()
+        role = _clean_inline_text(str(item.get("role") or "")).strip()
+        co = _clean_inline_text(str(item.get("company") or item.get("co") or "")).strip()
         if not role and not co:
             continue
         period = str(item.get("period") or "").strip()
@@ -285,7 +285,7 @@ def normalize_experiences(raw_items: list[Any]) -> list[dict[str, Any]]:
 
 def _short_project_title(text: str) -> str:
     """Salvage a concise project title from a longer detail/sentence string."""
-    base = _clean_text(str(text or ""))
+    base = _clean_inline_text(str(text or ""))
     base = re.split(r"[.\n;:|]", base)[0].strip(" -*•")
     words = base.split()
     return " ".join(words[:8]) if words else ""
@@ -306,7 +306,7 @@ def normalize_projects(raw_items: list[Any], *, known_skills: list[str] | None =
         url_prefix = _prefix_before_first_url(raw_impact)
         if url_prefix and len(url_prefix.split()) <= 6 and _known_skill_hits(url_prefix):
             stack_items = _dedupe(stack_items + split_skill_names(url_prefix))
-            impact = _clean_text(impact.replace(_clean_text(url_prefix), "", 1)).strip(" |:-")
+            impact = _clean_inline_text(impact.replace(_clean_inline_text(url_prefix), "", 1)).strip(" |:-")
 
         if not _valid_project_title(title, known):
             repo_title = _repo_title_from_url(repo)
@@ -381,7 +381,7 @@ def normalize_education_entries(raw_items: list[Any]) -> list[str]:
         text = _entry_title(raw)
         if not text:
             continue
-        split = [_clean_text(part) for part in re.split(r"\n+|(?:\s+-\s+)(?=(?:cgpa|gpa|grade|19|20|\d))", text) if _clean_text(part)]
+        split = [_clean_inline_text(part) for part in re.split(r"\n+|(?:\s+-\s+)(?=(?:cgpa|gpa|grade|19|20|\d))", text) if _clean_inline_text(part)]
         lines.extend(split or [text])
 
     items: list[str] = []
@@ -397,7 +397,7 @@ def normalize_education_entries(raw_items: list[Any]) -> list[str]:
             else:
                 if current:
                     items.append(current)
-                current = _clean_text(" ".join([line, *pending_details]))
+                current = _clean_inline_text(" ".join([line, *pending_details]))
                 pending_details = []
             continue
         if _education_detail(line):
@@ -411,12 +411,12 @@ def normalize_education_entries(raw_items: list[Any]) -> list[str]:
 
     if current:
         items.append(current)
-    return _dedupe([_clean_text(item) for item in items if _valid_education_item(item)])[:20]
+    return _dedupe([_clean_inline_text(item) for item in items if _valid_education_item(item)])[:20]
 
 
 def _education_same_entry(current: str, line: str) -> bool:
-    current_clean = _clean_text(current)
-    line_clean = _clean_text(line)
+    current_clean = _clean_inline_text(current)
+    line_clean = _clean_inline_text(line)
     if not current_clean or not line_clean:
         return False
     current_key = _key(current_clean)
@@ -457,44 +457,44 @@ def normalize_text_entries(raw_items: list[Any], *, kind: str) -> list[str]:
 
 
 def _clean_certification_entry(value: str) -> str:
-    clean = _clean_text(value)
+    clean = _clean_inline_text(value)
     clean = re.sub(r"(?i)\b(?:credential|certificate)\s+link\b", "", clean)
     clean = re.sub(r"(?i)\b(?:view|verify|open)\s+(?:credential|certificate)\b", "", clean)
     clean = URL_RE.sub("", clean)
     clean = re.sub(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)(\d{4})\b", r"\1 \2", clean, flags=re.I)
     clean = re.sub(r"\s*[-|]{2,}\s*", " - ", clean)
-    clean = _clean_text(clean).strip(" -:|")
+    clean = _clean_inline_text(clean).strip(" -:|")
     if not clean or clean.lower() in {"certificate", "certification", "certifications", "credential", "credentials", "link"}:
         return ""
     return clean
 
 
 def _is_cert_date_line(text: str) -> bool:
-    clean = _clean_text(text)
+    clean = _clean_inline_text(text)
     return bool(clean and CERT_DATE_RE.search(clean) and len(clean.split()) <= 7 and not re.search(r"[A-Za-z]{4,}", CERT_DATE_RE.sub("", clean)))
 
 
 def _normalize_cert_date(text: str) -> str:
     clean = re.sub(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)(\d{4})\b", r"\1 \2", text, flags=re.I)
-    return _clean_text(clean)
+    return _clean_inline_text(clean)
 
 
 def _is_cert_issuer_only(text: str) -> bool:
-    lower = _clean_text(text).lower()
+    lower = _clean_inline_text(text).lower()
     return lower in CERTIFICATE_ISSUERS or (len(lower.split()) <= 3 and lower in CERTIFICATE_ISSUERS)
 
 
 def _append_cert_detail(base: str, detail: str) -> str:
-    base = _clean_text(base)
-    detail = _clean_text(detail)
+    base = _clean_inline_text(base)
+    detail = _clean_inline_text(detail)
     if not detail or detail.lower() in base.lower():
         return base
     return f"{base} {detail}".strip()
 
 
 def _append_cert_issuer(base: str, issuer: str) -> str:
-    base = _clean_text(base)
-    issuer = _clean_text(issuer)
+    base = _clean_inline_text(base)
+    issuer = _clean_inline_text(issuer)
     if not issuer or issuer.lower() in base.lower():
         return base
     date_match = re.search(r"(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[A-Za-z]*\s+\d{4}\b.*)$", base, flags=re.I)
@@ -512,7 +512,7 @@ def _normalize_candidate(raw: Any) -> dict[str, str]:
 
 
 def _clean_name(value: str) -> str:
-    clean = _clean_text(re.sub(r"(?i)^name\s*:\s*", "", value or ""))
+    clean = _clean_inline_text(re.sub(r"(?i)^name\s*:\s*", "", value or ""))
     clean = re.split(r"\s+[|–—-]\s+", clean, maxsplit=1)[0].strip()
     role_match = re.search(
         r"\b(?:full[- ]?stack|software|frontend|backend|ai|ml|data)?\s*"
@@ -540,7 +540,7 @@ def _clean_name(value: str) -> str:
 def _clean_summary(value: str) -> str:
     lines: list[str] = []
     for raw_line in str(value or "").splitlines():
-        line = _clean_text(raw_line)
+        line = _clean_inline_text(raw_line)
         if not line:
             continue
         lower = line.lower().strip(" :-")
@@ -551,10 +551,10 @@ def _clean_summary(value: str) -> str:
         line = URL_RE.sub("", line)
         line = EMAIL_RE.sub("", line)
         line = PHONE_RE.sub("", line)
-        line = _clean_text(line).strip(" .;|-")
+        line = _clean_inline_text(line).strip(" .;|-")
         if line:
             lines.append(line)
-    clean = _clean_text(" ".join(lines))
+    clean = _clean_inline_text(" ".join(lines))
     if not clean:
         return ""
     marker_count = sum(1 for marker in ("email", "phone", "links", "linkedin", "github", "http") if marker in clean.lower())
@@ -566,7 +566,7 @@ def _clean_summary(value: str) -> str:
 
 
 def _valid_skill(skill: str) -> bool:
-    clean = _clean_text(skill)
+    clean = _clean_inline_text(skill)
     lower = clean.lower()
     if not clean or len(clean) > 60 or "@" in clean or "http" in lower:
         return False
@@ -609,7 +609,7 @@ def _projectish_title(title: str) -> bool:
 
 
 def _looks_like_project_detail(title: str) -> bool:
-    clean = _clean_text(title)
+    clean = _clean_inline_text(title)
     if not clean:
         return False
     if ACTION_SENTENCE_RE.search(clean):
@@ -626,7 +626,7 @@ def _looks_like_project_detail(title: str) -> bool:
 
 
 def _looks_like_stack_cluster(title: str) -> bool:
-    clean = _clean_text(title)
+    clean = _clean_inline_text(title)
     if not clean or len(clean) > 120:
         return False
     hits = _known_skill_hits(clean)
@@ -634,7 +634,7 @@ def _looks_like_stack_cluster(title: str) -> bool:
 
 
 def _looks_like_skill_only_text(text: str) -> bool:
-    clean = _clean_text(text)
+    clean = _clean_inline_text(text)
     if not clean:
         return False
     if _looks_like_stack_cluster(clean):
@@ -647,7 +647,7 @@ def _projectish_text(text: str) -> bool:
 
 
 def _clean_project_title(title: str) -> str:
-    clean = _clean_text(re.sub(r"^\d+\s*[.)/-]*\s*", "", title or ""))
+    clean = _clean_inline_text(re.sub(r"^\d+\s*[.)/-]*\s*", "", title or ""))
     clean = URL_RE.sub("", clean)
     clean = re.sub(r"(?i)\b(?:github|repo|repository|live|demo|source code)\s*:\s*$", "", clean)
     clean = re.sub(r"(?i)^(featured|selected)\s+(project|projects|work|case study)\s*[:|-]?\s*", "", clean).strip()
@@ -656,10 +656,10 @@ def _clean_project_title(title: str) -> str:
 
 
 def _clean_project_detail(value: str) -> str:
-    clean = _clean_text(value)
+    clean = _clean_inline_text(value)
     clean = URL_RE.sub("", clean)
     clean = re.sub(r"(?i)\b(?:github|repo|repository|live|demo|source code|certificate link)\s*:?\s*$", "", clean)
-    return _clean_text(clean).strip(" :-|")
+    return _clean_inline_text(clean).strip(" :-|")
 
 
 def _first_url(value: str) -> str:
@@ -671,11 +671,11 @@ def _prefix_before_first_url(value: str) -> str:
     match = URL_RE.search(value or "")
     if not match:
         return ""
-    return _clean_text(str(value or "")[:match.start()]).strip(" |:-")
+    return _clean_inline_text(str(value or "")[:match.start()]).strip(" |:-")
 
 
 def _clean_repo_url(value: str) -> str:
-    url = _first_url(value) or _clean_text(value)
+    url = _first_url(value) or _clean_inline_text(value)
     if not url:
         return ""
     if url.lower().startswith("www."):
@@ -697,7 +697,7 @@ def _repo_title_from_url(url: str) -> str:
     if len(parts) < 2:
         return ""
     name = re.sub(r"\.git$", "", parts[1], flags=re.I)
-    return _clean_text(name.replace("-", " ").replace("_", " ")).strip(" .:-")
+    return _clean_inline_text(name.replace("-", " ").replace("_", " ")).strip(" .:-")
 
 
 def _education_anchor(line: str) -> bool:
@@ -705,7 +705,7 @@ def _education_anchor(line: str) -> bool:
 
 
 def _education_detail(line: str) -> bool:
-    clean = _clean_text(line)
+    clean = _clean_inline_text(line)
     lower = clean.lower().strip(" ,")
     if not clean:
         return False
@@ -746,7 +746,7 @@ def _canonical_skill(value: str) -> str:
 
 
 def _clean_skill_token(value: str) -> str:
-    clean = _clean_text(value)
+    clean = _clean_inline_text(value)
     clean = re.sub(r"^[^\w+#.]+|[^\w+#.]+$", "", clean)
     return SKILL_CANONICAL.get(clean.lower(), clean)
 
@@ -754,8 +754,8 @@ def _clean_skill_token(value: str) -> str:
 def _entry_title(value: Any) -> str:
     item = _as_dict(value)
     if item:
-        return _clean_text(str(item.get("title") or item.get("name") or item.get("n") or ""))
-    return _clean_text(str(value or ""))
+        return _clean_inline_text(str(item.get("title") or item.get("name") or item.get("n") or ""))
+    return _clean_inline_text(str(value or ""))
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -766,12 +766,12 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _stack_list(value: Any) -> list[str]:
     if isinstance(value, list):
-        return [_clean_text(str(item)) for item in value if _clean_text(str(item))]
-    return [_clean_text(part) for part in str(value or "").split(",") if _clean_text(part)]
+        return [_clean_inline_text(str(item)) for item in value if _clean_inline_text(str(item))]
+    return [_clean_inline_text(part) for part in str(value or "").split(",") if _clean_inline_text(part)]
 
 
 def _append_detail(base: str, detail: str) -> str:
-    detail = _clean_text(detail)
+    detail = _clean_inline_text(detail)
     if not detail or detail.lower() in base.lower():
         return base
     separator = ", " if _education_detail(detail) else " - "
@@ -779,8 +779,8 @@ def _append_detail(base: str, detail: str) -> str:
 
 
 def _join_detail(base: str, detail: str) -> str:
-    base = _clean_text(base)
-    detail = _clean_text(detail)
+    base = _clean_inline_text(base)
+    detail = _clean_inline_text(detail)
     if not base:
         return detail
     if not detail or detail.lower() in base.lower():
@@ -789,7 +789,7 @@ def _join_detail(base: str, detail: str) -> str:
 
 
 def _is_section_or_noise(text: str) -> bool:
-    clean = _clean_text(text).lower().strip(" :-")
+    clean = _clean_inline_text(text).lower().strip(" :-")
     if not clean or clean in SECTION_TITLES:
         return True
     if re.fullmatch(r"\d+[\d,.]*(?:%|x|k)?", clean):
@@ -797,7 +797,7 @@ def _is_section_or_noise(text: str) -> bool:
     return bool(re.search(r"\b(show all|view all|open|menu|close|copyright|privacy)\b", clean))
 
 
-def _clean_text(value: str) -> str:
+def _clean_inline_text(value: str) -> str:
     value = re.sub(r"`([^`]+)`", r"\1", value or "")
     value = re.sub(r"\*\*([^*]+)\*\*", r"\1", value)
     value = re.sub(r"\*([^*]+)\*", r"\1", value)
@@ -817,7 +817,7 @@ def _dedupe(values: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for value in values:
-        clean = _clean_text(value)
+        clean = _clean_inline_text(value)
         key = clean.lower()
         if clean and key not in seen:
             seen.add(key)

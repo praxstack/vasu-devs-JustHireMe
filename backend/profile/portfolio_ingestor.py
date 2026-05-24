@@ -385,7 +385,7 @@ async def _snapshot_playwright_page(page) -> PageSnapshot:
     return PageSnapshot(
         url=page.url,
         title=str(data.get("title") or ""),
-        text=_clean_text(str(data.get("text") or ""))[:MAX_TEXT_PER_PAGE],
+        text=_normalize_block_text(str(data.get("text") or ""))[:MAX_TEXT_PER_PAGE],
         links=[{"href": str(link.get("href") or ""), "text": str(link.get("text") or "")} for link in data.get("links", []) if isinstance(link, dict)],
     )
 
@@ -427,8 +427,8 @@ def _snapshot_html(url: str, raw_html: str) -> PageSnapshot:
     text = re.sub(r"<[^>]+>", " ", text)
     return PageSnapshot(
         url=url,
-        title=_clean_text(html.unescape(title_match.group(1))) if title_match else "",
-        text=_clean_text(html.unescape(text))[:MAX_TEXT_PER_PAGE],
+        title=_normalize_block_text(html.unescape(title_match.group(1))) if title_match else "",
+        text=_normalize_block_text(html.unescape(text))[:MAX_TEXT_PER_PAGE],
         links=links,
     )
 
@@ -441,7 +441,7 @@ def _links_from_html(base_url: str, raw_html: str) -> list[dict[str, str]]:
         if not href_match:
             continue
         text = re.sub(r"<[^>]+>", " ", body)
-        links.append({"href": urljoin(base_url, html.unescape(href_match.group(1))), "text": _clean_text(html.unescape(text))})
+        links.append({"href": urljoin(base_url, html.unescape(href_match.group(1))), "text": _normalize_block_text(html.unescape(text))})
     return links
 
 
@@ -691,7 +691,7 @@ def _project_quality_score(project: dict[str, str]) -> int:
 
 
 def _looks_like_card_index(line: str) -> bool:
-    return bool(re.match(r"^\d{1,2}\s*//\s*.+", _clean_text(line)))
+    return bool(re.match(r"^\d{1,2}\s*//\s*.+", _normalize_block_text(line)))
 
 
 def _block_has_project_evidence(block: str) -> bool:
@@ -717,7 +717,7 @@ def _is_noise_text(text: str) -> bool:
 
 def _is_noise_title(title: str) -> bool:
     lower = _section_label(title)
-    normalized = re.sub(r"[^a-z0-9]+", "", _clean_text(title).lower())
+    normalized = re.sub(r"[^a-z0-9]+", "", _normalize_block_text(title).lower())
     if lower in PROJECT_SECTION_HEADINGS or lower in SECTION_BOUNDARY_HEADINGS or lower in NON_PROJECT_TITLES:
         return True
     if _is_concatenated_nav(normalized):
@@ -758,7 +758,7 @@ def _is_noise_title(title: str) -> bool:
 
 
 def _looks_like_stack_cluster(title: str) -> bool:
-    clean = _clean_text(title)
+    clean = _normalize_block_text(title)
     words = clean.split()
     if len(words) > 5:
         return False
@@ -774,7 +774,7 @@ def _looks_like_stack_cluster(title: str) -> bool:
 
 
 def _is_mostly_noise(text: str) -> bool:
-    clean = _clean_text(text).lower()
+    clean = _normalize_block_text(text).lower()
     if not clean:
         return True
     if any(re.search(pattern, clean, re.I) for pattern in NOISE_PATTERNS) and len(clean.split()) <= 8:
@@ -784,7 +784,7 @@ def _is_mostly_noise(text: str) -> bool:
 
 
 def _important_lines(text: str) -> list[str]:
-    lines = [_clean_text(line) for line in text.splitlines()]
+    lines = [_normalize_block_text(line) for line in text.splitlines()]
     return [line for line in lines if 3 <= len(line) <= 220 and not _nav_noise(line)]
 
 
@@ -798,7 +798,7 @@ def _looks_like_project_title(line: str, page_url: str, index: int, in_project_s
 
 
 def _looks_like_standalone_title(line: str) -> bool:
-    clean = _clean_text(line).strip(":- ")
+    clean = _normalize_block_text(line).strip(":- ")
     if not clean or _is_noise_title(clean) or _nav_noise(clean):
         return False
     words = clean.split()
@@ -810,7 +810,7 @@ def _looks_like_standalone_title(line: str) -> bool:
 
 
 def _section_label(line: str) -> str:
-    lower = _clean_text(line).lower().strip(" :-")
+    lower = _normalize_block_text(line).lower().strip(" :-")
     lower = re.sub(r"^\d{1,2}\s*/+\s*", "", lower).strip(" :-")
     return lower
 
@@ -818,7 +818,7 @@ def _section_label(line: str) -> str:
 def _clean_project_title(line: str) -> str:
     title = re.sub(r"(?i)\b(featured|selected|project|case study|work)\b", " ", line)
     title = re.sub(r"[:|–-]+$", "", title)
-    return _clean_text(title).strip(":- ") or _clean_text(line)
+    return _normalize_block_text(title).strip(":- ") or _normalize_block_text(line)
 
 
 def _project_impact(block: str, title: str) -> str:
@@ -957,16 +957,16 @@ def _dedupe_projects(projects: list[dict[str, str]]) -> list[dict[str, str]]:
     seen: set[str] = set()
     out = []
     for project in projects:
-        title = _clean_text(str(project.get("title") or ""))
+        title = _normalize_block_text(str(project.get("title") or ""))
         key = re.sub(r"[^a-z0-9]+", "", (project.get("repo") or title).lower())
         if not title or key in seen:
             continue
         seen.add(key)
         out.append({
             "title": title[:200],
-            "stack": _clean_text(str(project.get("stack") or ""))[:500],
-            "repo": _clean_text(str(project.get("repo") or ""))[:500],
-            "impact": _clean_text(str(project.get("impact") or ""))[:1000],
+            "stack": _normalize_block_text(str(project.get("stack") or ""))[:500],
+            "repo": _normalize_block_text(str(project.get("repo") or ""))[:500],
+            "impact": _normalize_block_text(str(project.get("impact") or ""))[:1000],
         })
     return out
 
@@ -993,7 +993,7 @@ def _looks_like_asset(url: str) -> bool:
     return bool(re.search(r"\.(png|jpe?g|gif|webp|svg|pdf|zip|mp4|mov|css|js|ico)(\?|$)", url, re.I))
 
 
-def _clean_text(value: str) -> str:
+def _normalize_block_text(value: str) -> str:
     value = re.sub(r"\r", "\n", value or "")
     value = re.sub(r"[ \t]+", " ", value)
     value = re.sub(r"\n{3,}", "\n\n", value)
@@ -1048,7 +1048,7 @@ def _dedupe_strings(values: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for value in values:
-        item = _clean_text(str(value))
+        item = _normalize_block_text(str(value))
         key = item.lower()
         if item and key not in seen:
             seen.add(key)

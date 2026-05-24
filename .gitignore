@@ -82,6 +82,7 @@ BoomBoom/
 scratch/
 
 # Generated artifacts and local analysis output
+graphify-out/
 .codex-temp-appdata/
 .codex-temp-sidecar/
 .codex-temp-vector-runtime/

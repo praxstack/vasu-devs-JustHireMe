@@ -140,7 +140,7 @@ def build_queries(raw_queries: str | None = None, raw_watchlist: str | None = No
     return split_queries(raw_queries) + build_watchlist_queries(raw_watchlist)
 
 
-def _clean_text(text: str) -> str:
+def _collapse_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
@@ -153,7 +153,7 @@ def _matched_terms(text: str, terms: tuple[str, ...], limit: int = 4) -> list[st
 
 
 def classify_post(text: str) -> str | None:
-    lower = _clean_text(text).lower()
+    lower = _collapse_whitespace(text).lower()
     if not lower:
         return None
     if not (_has_any(lower, TECH_TERMS) or _has_any(lower, ROLE_TERMS)):
@@ -170,7 +170,7 @@ def classify_post(text: str) -> str | None:
 
 
 def signal_quality(text: str, user: dict | None = None, kind: str | None = None) -> dict:
-    lower = _clean_text(text).lower()
+    lower = _collapse_whitespace(text).lower()
     tags: list[str] = []
     reasons: list[str] = []
     score = 0
@@ -242,7 +242,7 @@ def _budget_from_text(text: str) -> str:
 
 
 def _title_from_text(text: str, kind: str) -> str:
-    clean = _clean_text(re.sub(r"https?://\S+", "", text))
+    clean = _collapse_whitespace(re.sub(r"https?://\S+", "", text))
     clean = clean[:150].strip(" .")
     if clean:
         return clean
@@ -265,7 +265,7 @@ def _outreach_from_lead(text: str, user: dict | None, kind: str, budget: str) ->
     username = (user or {}).get("username", "")
     name = (user or {}).get("name") or (f"@{username}" if username else "there")
     handle = f"@{username}" if username else name
-    clean = _clean_text(text)
+    clean = _collapse_whitespace(text)
     project_hint = "AI/automation build"
     for term in ("AI agent", "LLM", "RAG", "chatbot", "automation", "FastAPI", "React", "SaaS"):
         if term.lower() in clean.lower():
@@ -285,7 +285,7 @@ def _outreach_from_lead(text: str, user: dict | None, kind: str, budget: str) ->
 
 
 def _lead_from_tweet(tweet: dict, user: dict | None, kind: str, query: str) -> dict:
-    text = _clean_text(tweet.get("text", ""))
+    text = _collapse_whitespace(tweet.get("text", ""))
     url = _tweet_url(tweet, user)
     metrics = tweet.get("public_metrics") or {}
     metric_bits = [
@@ -296,7 +296,7 @@ def _lead_from_tweet(tweet: dict, user: dict | None, kind: str, query: str) -> d
     created = tweet.get("created_at", "")
     author_bits = []
     if (user or {}).get("description"):
-        author_bits.append("Bio: " + _clean_text((user or {}).get("description", ""))[:240])
+        author_bits.append("Bio: " + _collapse_whitespace((user or {}).get("description", ""))[:240])
     if (user or {}).get("location"):
         author_bits.append("Location: " + str((user or {}).get("location", ""))[:120])
     if _profile_url(user):
