@@ -105,3 +105,6 @@ backend/tests/.scratch-templates/
 # Kuzu test graph artifacts
 backend/tests/graph.kuzu
 *.kuzu*
+
+# Local pytest basetemp fallback (used when %TEMP%/pytest-of-<user> is broken)
+backend/.pytest-basetemp/
