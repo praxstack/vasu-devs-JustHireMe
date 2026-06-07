@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+import weakref
 from pathlib import Path
 from typing import Any, cast
 
@@ -132,7 +133,20 @@ class ConnectionPool:
         connections[resolved] = conn
         with _POOL_LOCK:
             self._connections.add(conn)
+        # Reap this connection once its owning thread is gone, so a long-running
+        # process doesn't accumulate SQLite handles from dead worker threads.
+        # (check_same_thread=False makes the cross-thread close safe.)
+        weakref.finalize(threading.current_thread(), self._reap, conn)
         return conn
+
+    def _reap(self, conn) -> None:
+        with _POOL_LOCK:
+            self._connections.discard(conn)
+        try:
+            close_for_pool = getattr(conn, "close_for_pool", None)
+            (close_for_pool or conn.close)()
+        except Exception as exc:
+            _log.debug("sqlite pooled connection reap failed: %s", exc)
 
     def close_all(self) -> None:
         with _POOL_LOCK:
