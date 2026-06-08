@@ -108,10 +108,10 @@ export const MODEL_HINTS: Record<string, string[]> = {
   qwen:      ["qwen-plus", "qwen-max", "qwen-turbo", "qwen3-coder-plus"],
   azure:     ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "deployment-name"],
   openai:    ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2", "gpt-4o-mini", "gpt-4o"],
-  anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"],
+  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"],
   custom:    ["model-id", "provider/model", "chat-model"],
   ollama:    ["llama3", "mistral", "gemma2", "codellama"],
-  claude_cli: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001", "claude-opus-4-6"],
+  claude_cli: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-opus-4-7", "claude-haiku-4-5-20251001"],
   codex_cli:  ["gpt-5-codex", "gpt-5.1", "gpt-5"],
 };
 
