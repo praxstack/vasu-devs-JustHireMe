@@ -129,6 +129,30 @@ def test_codex_does_not_forward_rejected_default_model(monkeypatch):
     assert "-m" in cap["argv"] and "gpt-5" in cap["argv"]
 
 
+def test_codex_auto_falls_back_when_model_rejected(monkeypatch):
+    # An account-rejected -m model must transparently retry WITHOUT -m (the
+    # account's own default), not fail the whole call. The "not supported"
+    # message appears after codex's long banner, so detection uses full stderr.
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        out_path = argv[argv.index("--output-last-message") + 1]
+        if "-m" in argv:
+            banner = "OpenAI Codex v0.137.0\n" + ("x" * 400) + "\n"
+            err = banner + 'ERROR: {"message":"The \'gpt-5.1\' model is not supported when using Codex with a ChatGPT account."}'
+            return subprocess.CompletedProcess(argv, 1, "", err)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write("ok")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(sc.subprocess, "run", fake_run)
+    out = sc.complete_text("codex_cli", "s", "u", model="gpt-5.1")
+    assert out == "ok"
+    assert len(calls) == 2                       # first with -m (rejected), retry without
+    assert "-m" in calls[0] and "-m" not in calls[1]
+
+
 def test_structured_parses_and_strips_fences(monkeypatch):
     BaseModel = pytest.importorskip("pydantic").BaseModel
 

@@ -63,6 +63,10 @@ class CliTimeout(CliError):
     """The CLI call exceeded its timeout — often a cold start, so worth one retry."""
 
 
+class CliModelUnsupported(CliError):
+    """The requested -m model is rejected by the account (retry without it)."""
+
+
 def _exe(provider: str) -> str:
     return "claude" if provider == "claude_cli" else "codex"
 
@@ -98,16 +102,12 @@ def _strip_fences(s: str) -> str:
     return s.strip()
 
 
-def _codex_exec(exe_path: str, prompt: str, *, model, timeout: int) -> str:
-    """Run `codex exec` non-interactively and return its final message.
+# A model `-m` override that the account can't use (ChatGPT-account Codex only
+# exposes its own default model, e.g. gpt-5.5; API-only / -codex variants 400).
+_MODEL_UNSUPPORTED_HINT = "not supported when using codex"
 
-    The prompt (incl. any embedded JSON schema) goes on STDIN — never argv — so
-    it can't be mangled by the Windows `codex.cmd` shim / cmd.exe or hit the
-    ~32K command-line limit. We read the clean final message from
-    --output-last-message rather than scraping the agent's streamed stdout.
-    --skip-git-repo-check lets it run from the sidecar's app-data cwd (not a git
-    repo); --sandbox read-only keeps any model-issued command harmless.
-    """
+
+def _codex_run_once(exe_path: str, prompt: str, *, model, timeout: int) -> str:
     out_fd, out_path = tempfile.mkstemp(suffix="-codex.txt")
     os.close(out_fd)
     argv = [
@@ -116,7 +116,7 @@ def _codex_exec(exe_path: str, prompt: str, *, model, timeout: int) -> str:
         "--output-last-message", out_path,
     ]
     # Only forward an explicit, account-compatible model override; never the
-    # rejected default (see _CODEX_REJECTED_MODELS).
+    # known-rejected default (see _CODEX_REJECTED_MODELS).
     if model and str(model) not in _CODEX_REJECTED_MODELS:
         argv += ["-m", str(model)]
     try:
@@ -125,6 +125,11 @@ def _codex_exec(exe_path: str, prompt: str, *, model, timeout: int) -> str:
             encoding="utf-8", errors="replace", env=_child_env(), timeout=timeout,
         )
         if r.returncode != 0:
+            # Check the FULL stderr (codex prints a long banner before the error,
+            # so the truncated _classify message can miss the hint).
+            combined = ((r.stderr or "") + " " + (r.stdout or "")).lower()
+            if _MODEL_UNSUPPORTED_HINT in combined:
+                raise CliModelUnsupported(f"codex rejected model {model!r}")
             raise _classify(r.stderr or r.stdout)
         try:
             with open(out_path, encoding="utf-8") as handle:
@@ -143,6 +148,30 @@ def _codex_exec(exe_path: str, prompt: str, *, model, timeout: int) -> str:
             os.unlink(out_path)
         except OSError:
             pass
+
+
+def _codex_exec(exe_path: str, prompt: str, *, model, timeout: int) -> str:
+    """Run `codex exec` non-interactively and return its final message.
+
+    The prompt (incl. any embedded JSON schema) goes on STDIN — never argv — so
+    it can't be mangled by the Windows `codex.cmd` shim / cmd.exe or hit the
+    ~32K command-line limit. We read the clean final message from
+    --output-last-message rather than scraping the agent's streamed stdout.
+    --skip-git-repo-check lets it run from the sidecar's app-data cwd (not a git
+    repo); --sandbox read-only keeps any model-issued command harmless.
+
+    If an explicit model override is rejected by the account (ChatGPT-account
+    Codex only allows its own default model), we transparently retry once
+    WITHOUT -m so the call still succeeds on the user's default model.
+    """
+    try:
+        return _codex_run_once(exe_path, prompt, model=model, timeout=timeout)
+    except CliModelUnsupported:
+        # Only retry if we actually forwarded a model; otherwise the account's
+        # own default is the problem and there's nothing to drop.
+        if model and str(model) not in _CODEX_REJECTED_MODELS:
+            return _codex_run_once(exe_path, prompt, model=None, timeout=timeout)
+        raise
 
 
 def complete_text(provider: str, system: str, user: str, *, model=None, timeout: int = _DEFAULT_TIMEOUT) -> str:

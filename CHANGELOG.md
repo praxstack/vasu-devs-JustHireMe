@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 - 2026-06-14
+
+- Codex (ChatGPT) subscription: use the models your account actually supports. ChatGPT-account Codex only allows its own default model (gpt-5.5 as of June 2026); the older `gpt-5-codex`/`gpt-5.1`/`gpt-5` options were rejected with "not supported when using Codex with a ChatGPT account." The model picker now offers the supported set (default = your codex config's own model), and if a selected model is ever rejected the app transparently retries on your account's default instead of failing. Verified end-to-end: résumé ingestion, fit scoring, and text generation all run on the Codex subscription.
+- Fixed a noisy "suppressed exception … invalid literal for int()" line appearing in the activity stream during scans. An unset numeric setting is now treated as its default silently instead of being logged as an error.
+
 ## 1.1.0 - 2026-06-13
 
 - Works for any field, anywhere. Ranking, discovery, and résumé parsing are no longer biased toward software jobs. Scoring is now judged relative to your own profile's field instead of a fixed tech vocabulary, so a nurse, electrician, accountant, teacher, or chef is scored on their real merits (previously such roles were hard-capped at a low score as "not a technical opportunity"). Discovery and the no-LLM résumé parser recognize occupations across every field.

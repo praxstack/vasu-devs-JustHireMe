@@ -304,11 +304,17 @@ def has_x_token(cfg: dict) -> bool:
 
 
 def int_cfg(cfg: dict, key: str, default: int, min_value: int, max_value: int) -> int:
-    try:
-        value = int(str(cfg.get(key, "") or "").strip())
-    except Exception as log_exc:
-        logging.getLogger(__name__).warning('suppressed exception in backend/core/config.py:int_cfg: %s', log_exc)
+    raw = str(cfg.get(key, "") or "").strip()
+    if not raw:
+        # An unset/blank setting is normal — use the default silently. (Logging a
+        # "suppressed exception" here spammed the activity stream on every scan.)
         value = default
+    else:
+        try:
+            value = int(raw)
+        except (ValueError, TypeError):
+            logging.getLogger(__name__).debug('int_cfg: non-numeric %r for %r; using default', raw, key)
+            value = default
     return max(min_value, min(value, max_value))
 
 

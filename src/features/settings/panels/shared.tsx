@@ -112,9 +112,12 @@ export const MODEL_HINTS: Record<string, string[]> = {
   custom:    ["model-id", "provider/model", "chat-model"],
   ollama:    ["llama3", "mistral", "gemma2", "codellama"],
   claude_cli: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-opus-4-7", "claude-haiku-4-5-20251001"],
-  // gpt-5-codex is rejected for ChatGPT-account Codex; "" = use your plan's
-  // own default model (the reliable choice). Backend ignores a stray gpt-5-codex.
-  codex_cli:  ["", "gpt-5.1", "gpt-5"],
+  // ChatGPT-account Codex only allows its own default model (gpt-5.5 as of
+  // 2026-06); -codex variants and other gpt-5.x 400 with "not supported when
+  // using Codex with a ChatGPT account". "" = use your codex config default
+  // (recommended). Backend auto-falls-back to the account default if an
+  // override is rejected.
+  codex_cli:  ["", "gpt-5.5"],
 };
 
 export const STEPS = [

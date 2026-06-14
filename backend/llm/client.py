@@ -224,7 +224,7 @@ _DEFAULT_MODELS: dict[str, str] = {
     "custom":    "model-id",
     "ollama":    "llama3",
     "claude_cli": "claude-sonnet-4-6",  # uses the user's Claude subscription via the claude CLI (no API key)
-    "codex_cli":  "gpt-5-codex",         # uses the user's ChatGPT subscription via the codex CLI (no API key)
+    "codex_cli":  "gpt-5.5",             # ChatGPT-account Codex only allows its own default model (gpt-5.5 as of 2026-06); codex falls back to the account default if this is unavailable
 }
 
 _OPENAI_COMPAT_BASE_URLS: dict[str, str] = {
