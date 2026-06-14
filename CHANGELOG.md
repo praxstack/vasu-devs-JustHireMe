@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 - 2026-06-13
+
+- Works for any field, anywhere. Ranking, discovery, and résumé parsing are no longer biased toward software jobs. Scoring is now judged relative to your own profile's field instead of a fixed tech vocabulary, so a nurse, electrician, accountant, teacher, or chef is scored on their real merits (previously such roles were hard-capped at a low score as "not a technical opportunity"). Discovery and the no-LLM résumé parser recognize occupations across every field.
+- Location-aware discovery for any region. Your job-search location is detected from your résumé (or set explicitly in onboarding/Settings) and injected into searches worldwide, with a remote / hybrid / onsite preference. The old India/Global toggle is generalized to any city or country.
+- Run the whole app on your ChatGPT (Codex) or Claude subscription — no API key. The Codex provider now works end to end: it talks to the local `codex` CLI over stdin (fixing Windows command-line mangling), reads clean output, and no longer forces an unsupported model. Pick "Codex · sub" in Settings.
+- Fixed the bundled backend failing to start on some installs ("Application startup failed"). Several internal modules loaded dynamically weren't being packaged into the sidecar; they are now bundled explicitly.
+- Fixed résumé upload sometimes failing with "'C' object has no attribute 'n'" when the language model was unavailable. The fallback now degrades cleanly to the built-in parser instead of crashing.
+- Security hardening: SSRF guards on all outbound fetches and custom LLM endpoints, XML parsing hardened against entity-expansion attacks, upload size caps, loopback-only host checks, rate limits on more endpoints, and assorted correctness fixes across the data and generation layers.
+
 ## 1.0.42 - 2026-05-28
 
 - Fixed CI: two backend tests still used very short placeholder job descriptions that tripped the stricter generation-readiness check added in 1.0.39, turning the test suite red on main even though releases built fine. Gave those fixtures realistic descriptions. No change to app behavior.
