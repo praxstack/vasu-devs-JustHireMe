@@ -7,7 +7,6 @@ description skill-scanning) and embeds it into the LanceDB vector tables.
 
 import hashlib
 import logging
-import re
 
 from core.logging import get_logger
 from data.vector.connection import vec
@@ -120,11 +119,8 @@ def _graph(p: C):
         # Collect skills from both explicit e.s list and by scanning description text
         exp_skills: set[str] = set(e.s or [])
         if e.d:
-            from profile.normalization import SKILL_CANONICAL
-            desc_lower = e.d.lower()
-            for raw, canonical in SKILL_CANONICAL.items():
-                if re.search(r"(?<![a-z0-9+#.-])" + re.escape(raw) + r"(?![a-z0-9+#.-])", desc_lower):
-                    exp_skills.add(canonical)
+            from profile.normalization import scan_skills_in_text
+            exp_skills.update(scan_skills_in_text(e.d))
         for sn in exp_skills:
             canonical = _canonical(sn)
             if not canonical:
@@ -143,12 +139,10 @@ def _graph(p: C):
         # Collect skills from explicit stack + scan title/impact for additional skills
         proj_skills: set[str] = set(pr.s or [])
         proj_skills.update(pr.stack or [])
-        combined_text = f"{pr.title} {pr.impact}".lower()
+        combined_text = f"{pr.title} {pr.impact}".strip()
         if combined_text:
-            from profile.normalization import SKILL_CANONICAL
-            for raw, canonical in SKILL_CANONICAL.items():
-                if re.search(r"(?<![a-z0-9+#.-])" + re.escape(raw) + r"(?![a-z0-9+#.-])", combined_text):
-                    proj_skills.add(canonical)
+            from profile.normalization import scan_skills_in_text
+            proj_skills.update(scan_skills_in_text(combined_text))
         for sn in proj_skills:
             canonical = _canonical(sn)
             if not canonical:

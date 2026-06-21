@@ -12,6 +12,23 @@ from models.schema import C, E, P, S
 # Re-exported here for backward compatibility with existing call sites.
 from data.skill_taxonomy import SKILL_CANONICAL
 
+# Precompile the whole-token alias patterns ONCE at import. The ingest skill-scan
+# runs this vocabulary against every project + experience description; the old code
+# rebuilt a fresh regex for each of the ~77 entries on every call.
+_SKILL_SCAN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"(?<![a-z0-9+#.-])" + re.escape(raw) + r"(?![a-z0-9+#.-])"), canonical)
+    for raw, canonical in SKILL_CANONICAL.items()
+]
+
+
+def scan_skills_in_text(text: str) -> set[str]:
+    """Canonical skills whose alias appears as a whole token in ``text`` (case-insensitive)."""
+    if not text:
+        return set()
+    lowered = text.lower()
+    return {canonical for pattern, canonical in _SKILL_SCAN_PATTERNS if pattern.search(lowered)}
+
+
 SECTION_TITLES = {
     "about",
     "achievements",
