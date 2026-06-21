@@ -31,7 +31,6 @@ export function Sidebar({
   collapsed,
   onToggleCollapsed,
   onSettings,
-  onSetup,
 }: {
   view: View;
   setView: (v: View) => void;
@@ -39,7 +38,6 @@ export function Sidebar({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onSettings: () => void;
-  onSetup?: () => void;
 }) {
   const [pipelineOpen, setPipelineOpen] = useState(true);
   const pipelineActive = isPipelineView(view);
@@ -194,11 +192,6 @@ export function Sidebar({
       <div className="grow" />
 
       <div className="sidebar-utility">
-        <button className="profile-add-context sidebar-setup" onClick={onSetup} title={collapsed ? "Setup Guide" : undefined} aria-label="Setup Guide">
-          <Icon name="spark" size={14} />
-          <span className="sidebar-label">Setup Guide</span>
-        </button>
-
         <button className="btn sidebar-settings-btn" onClick={onSettings} aria-label="Settings" title="Settings">
           <Icon name="settings" size={15} />
           <span className="sidebar-label">Settings</span>

@@ -60,7 +60,7 @@ export default function App() {
     view, setView, sel, setSel, showSettings, setShowSettings, showOnboarding,
     setShowOnboarding, applyDraft, setApplyDraft, applyAutoFocus, setApplyAutoFocus,
     scanning, setScanning, reevaluating, setReevaluating, cleaning, setCleaning,
-    scanErr, setScanErr, closeDrawer, focusApplyView, openSettings, openSetupGuide,
+    scanErr, setScanErr, closeDrawer, focusApplyView, openSettings,
   } = useAppShellState();
   // Always pass the live version of the selected lead so the drawer reflects real-time updates
   const liveSel = sel ? (leads.find(l => l.job_id === sel.job_id) ?? sel) : null;
@@ -285,7 +285,6 @@ export default function App() {
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed(value => !value)}
           onSettings={() => setShowSettings(true)}
-          onSetup={openSetupGuide}
         />
         <div className="app-main">
           <Topbar view={view} progress={progress} />
