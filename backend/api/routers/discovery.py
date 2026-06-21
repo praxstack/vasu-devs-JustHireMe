@@ -318,6 +318,7 @@ async def _run_scan_inner(
     await manager.broadcast({"type": "agent", "event": "eval_start", "msg": f"Evaluating {len(to_score)} new leads via {cfg.get('llm_provider', 'ollama')}"})
 
     fallback_count = 0
+    prefiltered_count = 0
     for lead in to_score:
         if stop_event.is_set():
             await manager.broadcast({"type": "agent", "event": "eval_done", "msg": "Scan stopped during evaluation."})
@@ -332,11 +333,19 @@ async def _run_scan_inner(
             )
             if result.get("scored_by") == "deterministic_fallback":
                 fallback_count += 1
+            if result.get("scored_by") == "prefiltered_off_field":
+                prefiltered_count += 1
             await manager.broadcast({"type": "LEAD_UPDATED", "data": {**lead, **result}})
             await manager.broadcast({"type": "agent", "event": "eval_scored", "msg": f"Scored {lead.get('title','')} = {result['score']}/100"})
         except Exception as exc:
             await manager.broadcast({"type": "agent", "event": "eval_error", "msg": f"Eval failed for {lead.get('title','')}: {exc}"})
 
+    if prefiltered_count > 0:
+        await manager.broadcast({
+            "type": "agent",
+            "event": "eval_prefilter_summary",
+            "msg": f"{prefiltered_count}/{len(to_score)} leads skipped as off-field (no LLM tokens spent)",
+        })
     if fallback_count > 0:
         await manager.broadcast({
             "type": "agent",

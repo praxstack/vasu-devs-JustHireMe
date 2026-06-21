@@ -300,6 +300,17 @@ def _score_with_llm(jd: str, candidate_data: dict, baseline: dict, preferences: 
     return _normalize_llm_result(raw, baseline)
 
 
+def _off_field_prefilter(baseline: dict, settings: dict | None) -> bool:
+    """Skip the expensive LLM evaluation for a lead the cheap deterministic pass
+    already flags as off-field FOR THIS CANDIDATE (a sales role for an AI engineer,
+    a software role for a nurse, ...). The wrong-field cap (15) is a hard ceiling
+    the LLM can't lift, so evaluating such a lead just burns tokens. Opt out with
+    the prefilter_off_field setting."""
+    if str((settings or {}).get("prefilter_off_field", "true")).strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return any(str(gap).startswith("wrong-field cap") for gap in (baseline.get("gaps") or []))
+
+
 def score(jd: str, candidate_data: dict, settings: dict | None = None) -> dict:
     """
     Return a 0-100 job match score.
@@ -310,6 +321,15 @@ def score(jd: str, candidate_data: dict, settings: dict | None = None) -> dict:
     baseline = score_job_lead(jd, candidate_data).as_dict()
     if not _evaluator_llm_requested(settings):
         baseline["scored_by"] = "deterministic"
+        return baseline
+    # Token-saving relevance gate: don't run the LLM on leads the cheap pass has
+    # already ruled off-field — they can't score above 15 no matter what it says.
+    if _off_field_prefilter(baseline, settings):
+        baseline["scored_by"] = "prefiltered_off_field"
+        baseline["reason"] = (
+            "Off-field for your profile — skipped the full AI evaluation to save tokens. "
+            + str(baseline.get("reason") or "")
+        ).strip()
         return baseline
     preferences = str((settings or {}).get("job_preferences") or "").strip()
     try:
