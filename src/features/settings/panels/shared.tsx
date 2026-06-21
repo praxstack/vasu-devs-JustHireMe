@@ -360,6 +360,28 @@ export function ModelChips({ provider, value, onChange, api, cfg }: {
           </button>
         </div>
       </div>
+      {!open && ids.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {ids.slice(0, 8).map(m => {
+            const active = value === m;
+            const label = m === "" ? "Plan default" : (m.length > 28 ? `…${m.slice(-26)}` : m);
+            return (
+              <button key={m || "__default"} type="button" onClick={() => onChange(m)}
+                title={m || "Use your plan's own default model"}
+                style={{
+                  padding: "3px 10px", borderRadius: 999, fontSize: 11, cursor: "pointer",
+                  fontFamily: m === "" ? "inherit" : "var(--font-mono)",
+                  background: active ? "var(--ink)" : "var(--paper-2)",
+                  color: active ? "var(--paper)" : "var(--ink-2)",
+                  border: `1px solid ${active ? "var(--ink)" : "var(--line)"}`,
+                }}>
+                {label}
+              </button>
+            );
+          })}
+          {ids.length > 8 && <span style={{ fontSize: 10.5, color: "var(--ink-3)", alignSelf: "center" }}>+{ids.length - 8} more — search above</span>}
+        </div>
+      )}
       {open && shown.length > 0 && (
         <div style={{
           position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 30,
@@ -379,7 +401,7 @@ export function ModelChips({ provider, value, onChange, api, cfg }: {
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "var(--paper-2)"; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = active ? "var(--paper-2)" : "transparent"; }}>
-                <span className="mono" style={{ fontSize: 12, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m}</span>
+                <span className={m === "" ? "" : "mono"} style={{ fontSize: 12, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m === "" ? "Plan default" : m}</span>
                 {metaText && <span style={{ fontSize: 10, color: "var(--ink-3)" }}>{metaText}</span>}
               </button>
             );
