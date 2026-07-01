@@ -25,6 +25,7 @@ from discovery.sources.ats import scrape_ashby as _source_scrape_ashby
 from discovery.sources.ats import scrape_direct_ats_url as _source_scrape_direct_ats_url
 from discovery.sources.ats import scrape_greenhouse as _source_scrape_greenhouse
 from discovery.sources.ats import scrape_lever as _source_scrape_lever
+from discovery.sources.ats import scrape_target as _source_scrape_ats_target
 from discovery.sources.ats import scrape_workable as _source_scrape_workable
 from discovery.sources.custom import connector_headers as _source_connector_headers
 from discovery.sources.custom import dot_get as _source_dot_get
@@ -261,6 +262,10 @@ async def _scrape_target(target: str) -> list[dict]:
         return await _scrape_ashby(target.split(":", 2)[2].strip())
     if lower.startswith("ats:workable:"):
         return await _scrape_workable(target.split(":", 2)[2].strip())
+    if lower.startswith("ats:"):
+        # smartrecruiters / recruitee / personio (and any future keyless ATS):
+        # route through the canonical dispatcher instead of duplicating branches.
+        return await _source_scrape_ats_target(target)
     if lower.startswith(("http://", "https://")):
         return await _scrape_direct_ats_url(target)
     if lower.startswith("github:"):

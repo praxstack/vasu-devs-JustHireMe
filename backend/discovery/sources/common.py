@@ -90,3 +90,29 @@ async def json_get(url: str, params: dict | None = None) -> dict | list:
             r.raise_for_status()
         r.raise_for_status()
         return r.json()
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable_source_error),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
+async def xml_get(url: str, params: dict | None = None) -> str:
+    """Fetch an XML source feed (e.g. Personio's recruiting feed) as raw text.
+
+    Same SSRF-guarded client + retry policy as ``json_get``; the caller parses
+    the returned text with ``defusedxml`` (never the stdlib XML parser).
+    """
+    headers = {
+        "User-Agent": "JustHireMe free-source scout",
+        "Accept": "application/xml, text/xml",
+    }
+    async with guarded_async_client(timeout=30, headers=headers, follow_redirects=True) as cx:
+        r = await cx.get(url, params=params)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
+        r.raise_for_status()
+        return r.text

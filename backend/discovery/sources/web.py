@@ -283,13 +283,31 @@ def parse_wellfound(md: str, src: str) -> list:
     return results
 
 
+def _require_scout_llm() -> None:
+    """Fail loudly when the web scout has no usable LLM.
+
+    The web path turns scraped page markdown into leads *via an LLM*. With no
+    reachable/configured LLM, ``call_llm`` returns an empty result and the entire
+    web source contributes zero leads silently — indistinguishable from "this page
+    had no jobs". Raising here surfaces the real cause in the scan's source-error
+    summary (configure a provider, or lean on the keyless API sources) instead of
+    a mystery empty scan. Checked before crawling so a browser launch isn't spent
+    on a path that cannot extract anything.
+    """
+    from llm.client import assert_llm_configured
+
+    assert_llm_configured("scout")
+
+
 def scrape(u: str, headed: bool = False) -> list:
+    _require_scout_llm()
     u = ensure_scheme(u)
     md = asyncio.run(crawl(u, headed=headed))
     return parse(md, u)
 
 
 def scrape_wellfound_target(target: str, headed: bool = False) -> list:
+    _require_scout_llm()
     crawl_target = google_past_week_url(target) if target.startswith("site:") else target
     md = asyncio.run(crawl(crawl_target, headed=headed))
     return parse_wellfound(md, crawl_target)

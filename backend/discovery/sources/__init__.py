@@ -7,6 +7,9 @@ from discovery.sources.ats import (
     scrape_greenhouse,
     is_ats_target,
     scrape_lever,
+    scrape_personio,
+    scrape_recruitee,
+    scrape_smartrecruiters,
     scrape_workable,
 )
 from discovery.sources.apify import run_actor as run_apify_actor
@@ -41,10 +44,13 @@ __all__ = [
     "scrape_hn_hiring",
     "scrape_jobicy_api",
     "scrape_lever",
+    "scrape_personio",
+    "scrape_recruitee",
     "scrape_reddit",
     "scrape_remoteok",
     "scrape_remotive",
     "scrape_rss",
+    "scrape_smartrecruiters",
     "scrape_web",
     "scrape_wellfound_target",
     "scrape_workable",
