@@ -142,7 +142,7 @@ def test_scrape_direct_ats_url_detects_subdomain_slug(monkeypatch):
         seen["recruitee"] = slug
         return []
 
-    async def fake_personio(slug):
+    async def fake_personio(slug, tld="com"):
         seen["personio"] = slug
         return []
 

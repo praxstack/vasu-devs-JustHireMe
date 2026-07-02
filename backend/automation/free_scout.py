@@ -143,15 +143,25 @@ def _ats_targets_from_watchlist(raw: str | None) -> list[str]:
             continue
         provider = parts[0].lower()
         slug = parts[1]
-        if provider in {"greenhouse", "gh"}:
-            targets.append(f"ats:greenhouse:{slug}")
-        elif provider == "lever":
-            targets.append(f"ats:lever:{slug}")
-        elif provider == "ashby":
-            targets.append(f"ats:ashby:{slug}")
-        elif provider == "workable":
-            targets.append(f"ats:workable:{slug}")
+        canonical = _ATS_WATCHLIST_PROVIDERS.get(provider)
+        if canonical:
+            targets.append(f"ats:{canonical}:{slug}")
     return targets
+
+
+# Watchlist "provider,slug" prefixes -> canonical ats: dispatcher key. Kept in one
+# table so a newly-added keyless adapter is reachable from the watchlist too (the
+# 3 keyless boards added in discovery/sources/ats.py were previously dropped here).
+_ATS_WATCHLIST_PROVIDERS = {
+    "greenhouse": "greenhouse",
+    "gh": "greenhouse",
+    "lever": "lever",
+    "ashby": "ashby",
+    "workable": "workable",
+    "smartrecruiters": "smartrecruiters",
+    "recruitee": "recruitee",
+    "personio": "personio",
+}
 
 
 def _text_lead(item: dict, default_kind: str = "job") -> dict:

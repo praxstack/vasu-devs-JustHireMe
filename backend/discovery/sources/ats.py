@@ -243,10 +243,12 @@ async def scrape_recruitee(slug: str) -> list[dict]:
     return results
 
 
-async def scrape_personio(slug: str) -> list[dict]:
+async def scrape_personio(slug: str, tld: str = "com") -> list[dict]:
     from defusedxml import ElementTree as DefusedET
 
-    xml = await xml_get(f"https://{slug}.jobs.personio.com/xml")
+    tld = (tld or "com").lstrip(".")
+    base = f"https://{slug}.jobs.personio.{tld}"
+    xml = await xml_get(f"{base}/xml")
     try:
         root = DefusedET.fromstring(xml)
     except Exception as log_exc:
@@ -271,7 +273,7 @@ async def scrape_personio(slug: str) -> list[dict]:
         if location:
             desc_parts.append(f"Location: {location}")
         job_id = _text("id")
-        url = f"https://{slug}.jobs.personio.com/job/{job_id}" if job_id else f"https://{slug}.jobs.personio.com/"
+        url = f"{base}/job/{job_id}" if job_id else f"{base}/"
         results.append(text_lead({
             "title": title,
             "company": slug,
@@ -313,7 +315,8 @@ async def scrape_direct_ats_url(url: str) -> list[dict]:
     if "recruitee.com" in host and subdomain not in {"www", ""}:
         return await scrape_recruitee(subdomain)
     if "jobs.personio." in host and subdomain not in {"www", ""}:
-        return await scrape_personio(subdomain)
+        # Preserve the tenant's real TLD (.com / .de) instead of hardcoding .com.
+        return await scrape_personio(subdomain, host.rsplit(".", 1)[-1] or "com")
     return []
 
 

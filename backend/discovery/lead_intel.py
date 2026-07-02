@@ -162,14 +162,20 @@ def location_from_text(text: str) -> str:
         if "india" in lower:
             return "Remote India"
         return "Remote"
-    patterns = [
-        r"(?:location|based in|onsite|hybrid)\s*[:\-]?\s*([A-Z][A-Za-z .,/+-]{2,80})",
+    # Keyword-prefixed location: match the keyword case-insensitively (inline
+    # (?i:...)) but require the CAPTURED location to start with a real uppercase
+    # letter — otherwise a global re.I made [A-Z] match lowercase, so "onsite work
+    # required" captured "work required" as a location.
+    match = re.search(r"(?i:location|based in|onsite|hybrid)\s*[:\-]?\s*([A-Z][A-Za-z .,/+-]{2,80})", clean)
+    if match:
+        return match.group(1).strip(" .")[:120]
+    match = re.search(
         r"\b(San Francisco|New York|London|Berlin|Bengaluru|Bangalore|Mumbai|Delhi|Toronto|Singapore)\b",
-    ]
-    for pat in patterns:
-        match = re.search(pat, clean, flags=re.I)
-        if match:
-            return match.group(1).strip(" .")[:120]
+        clean,
+        flags=re.I,
+    )
+    if match:
+        return match.group(1).strip(" .")[:120]
     return ""
 
 

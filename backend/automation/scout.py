@@ -223,19 +223,21 @@ def classify_job_seniority(lead: dict) -> str:
     years = _experience_years(text)
     max_years = max(years) if years else 0
 
-    if _has_seniority_term(text, _SENIOR_TERMS) or max_years >= 5:
+    # Explicit entry-level signals take precedence over an incidental senior NOUN
+    # ('manager'/'lead'/'architect') in an otherwise entry-level posting; a high
+    # (>=5yr) range still classifies senior. (Mirrors discovery.normalizer.)
+    if max_years >= 5:
+        return "senior"
+    if _has_seniority_term(text, _FRESHER_TERMS):
+        return "fresher"
+    if _has_seniority_term(text, _JUNIOR_TERMS) or (years and max_years <= 2):
+        return "junior"
+    if _has_seniority_term(text, _SENIOR_TERMS):
         return "senior"
     if _has_seniority_term(text, _MID_TERMS) or max_years >= 3:
         return "mid"
-    if _has_seniority_term(text, _FRESHER_TERMS):
+    if years and max_years <= 1:
         return "fresher"
-    if _has_seniority_term(text, _JUNIOR_TERMS):
-        return "junior"
-    if years:
-        if max_years <= 1:
-            return "fresher"
-        if max_years <= 2:
-            return "junior"
     return "unknown"
 
 

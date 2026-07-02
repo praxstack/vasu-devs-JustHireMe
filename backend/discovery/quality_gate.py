@@ -103,6 +103,11 @@ def _freshness(lead: dict, max_age_days: int = 7) -> tuple[bool, str]:
         return False, "no posting date"
     newest = max(dates)
     age_days = (datetime.now(timezone.utc) - newest).days
+    if age_days < 0:
+        # A future posting date is almost always a mis-parse (e.g. DD/MM/YYYY read
+        # as MM/DD/YYYY) or bad source data. Don't let a negative age slip past the
+        # `age_days > max_age_days` staleness gate — treat it as unverified.
+        return False, f"future posting date ({-age_days} days ahead); treating as unverified"
     if age_days > max_age_days:
         return False, f"stale posting: {age_days} days old"
     return True, f"fresh posting: {age_days} days old"
