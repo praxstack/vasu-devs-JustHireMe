@@ -176,7 +176,12 @@ def _entry_key(value) -> str:
 
 
 def _norm_key(value) -> str:
-    return re.sub(r"[^a-z0-9]+", "", unquote(str(value or "")).strip().lower())
+    # Preserve the punctuation that distinguishes tech names (C vs C++ vs C#,
+    # .NET vs NET, Node.js vs Nodejs). Stripping it collapsed them to the same
+    # token, so deleting "C" collaterally tombstoned+purged "C++" and "C#". This
+    # keys the deletion identity, so it must match the [a-z0-9+#.-] word class the
+    # rest of the codebase treats as significant for skills.
+    return re.sub(r"[^a-z0-9+#.-]+", "", unquote(str(value or "")).strip().lower())
 
 
 def _dedupe_ids(ids: Iterable[str]) -> list[str]:

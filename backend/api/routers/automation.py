@@ -72,8 +72,10 @@ async def actuate_job(job_id: str, manager, repo: Repository | None = None, serv
     job = job_store.create("automation_fire", {"job_id": job_id})
     try:
         job_store.update(job.job_id, status="running", progress=10)
-        lead = await asyncio.to_thread(repo.leads.get_lead_by_id, job_id)
-        asset = (lead or {}).get("resume_asset") or (lead or {}).get("asset") or ""
+        # Enrich with candidate identity (name/email/phone/links/cover_letter) the
+        # same way the Ghost auto-apply path does — the bare get_lead_by_id row has
+        # only job metadata, so the actuator would fill every identity field blank.
+        lead, asset = await service.get_lead_for_fire(job_id)
         _status, detail = fire_blocker(lead, asset)
         if detail:
             await manager.broadcast({
@@ -195,11 +197,11 @@ def create_router(manager) -> APIRouter:
     @router.post("/leads/{job_id}/apply/preview")
     async def preview_apply(
         job_id: str,
-        repo: Repository = Depends(get_repository),
         service=Depends(get_automation_service),
     ):
-        lead = await asyncio.to_thread(repo.leads.get_lead_by_id, job_id)
-        asset = (lead or {}).get("resume_asset") or (lead or {}).get("asset") or ""
+        # Enrich with candidate identity like the fire path, else the preview
+        # renders every name/email/phone field blank.
+        lead, asset = await service.get_lead_for_fire(job_id)
         status_code, detail = fire_blocker(lead, asset)
         if detail:
             raise HTTPException(status_code=status_code, detail=detail)
