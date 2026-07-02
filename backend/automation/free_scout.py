@@ -316,7 +316,10 @@ def run(
         logging.getLogger(__name__).warning('suppressed exception in backend/automation/free_scout.py:run: %s', log_exc)
         cap = 20
     try:
-        min_score = max(0, min(int(min_signal_score or 45), 100))
+        # Distinguish an explicit 0 (accept everything) from None/unset — `or 45`
+        # silently overrode a user-chosen threshold of 0.
+        raw_min = MIN_DEFAULT_QUALITY if min_signal_score is None else int(min_signal_score)
+        min_score = max(0, min(raw_min, 100))
     except Exception as log_exc:
         logging.getLogger(__name__).warning('suppressed exception in backend/automation/free_scout.py:run: %s', log_exc)
         min_score = MIN_DEFAULT_QUALITY

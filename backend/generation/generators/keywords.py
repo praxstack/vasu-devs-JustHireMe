@@ -12,7 +12,10 @@ def _extract_jd_keywords(jd: str, profile: dict) -> str:
     found: list[str] = []
     for canonical, aliases in TECH_TAXONOMY.items():
         for alias in (canonical.lower(), *aliases):
-            if alias in jd_lower:
+            # Word-boundary match (like _job_keyword_terms) — a raw substring test
+            # matched e.g. 'go' inside 'category', injecting false ATS keywords into
+            # the tailoring prompt.
+            if re.search(rf"(?<![a-z0-9+#]){re.escape(alias.lower())}(?![a-z0-9+#])", jd_lower):
                 found.append(canonical)
                 break
     # Also pull soft / domain terms the JD explicitly names

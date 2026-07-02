@@ -209,14 +209,18 @@ def classify_job_seniority(lead: dict) -> str:
         return "senior"
     if _has_seniority_term(text, FRESHER_TERMS):
         return "fresher"
-    if _has_seniority_term(text, JUNIOR_TERMS) or (years and max_years <= 2):
+    if _has_seniority_term(text, JUNIOR_TERMS):
         return "junior"
     if _has_seniority_term(text, SENIOR_TERMS):
         return "senior"
     if _has_seniority_term(text, MID_TERMS) or max_years >= 3:
         return "mid"
+    # Year-range fallback (kept AFTER the term checks so it's reachable): a 0-1yr
+    # posting is fresher, a 2yr posting is junior.
     if years and max_years <= 1:
         return "fresher"
+    if years and max_years <= 2:
+        return "junior"
     return "unknown"
 
 

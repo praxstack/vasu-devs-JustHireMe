@@ -17,7 +17,7 @@ SETTINGS_SCHEMA = {
             "deepseek", "xai", "kimi", "mistral", "openrouter", "together",
             "fireworks", "cerebras", "perplexity", "huggingface", "cohere",
             "sambanova", "qwen", "azure", "custom",
-            "claude_cli", "codex_cli",  # subscription CLIs (no API key)
+            "claude_cli", "codex_cli", "gemini_cli", "copilot_cli",  # subscription CLIs (no API key)
         ],
         "default": "",
     },
@@ -28,7 +28,7 @@ SETTINGS_SCHEMA = {
             "deepseek", "xai", "kimi", "mistral", "openrouter", "together",
             "fireworks", "cerebras", "perplexity", "huggingface", "cohere",
             "sambanova", "qwen", "azure", "custom",
-            "claude_cli", "codex_cli",  # subscription CLIs (no API key)
+            "claude_cli", "codex_cli", "gemini_cli", "copilot_cli",  # subscription CLIs (no API key)
         ],
         "default": "",
     },
