@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from discovery.normalizer import is_recent
 from core.logging import get_logger
+from core.url_guard import assert_public_url, block_private_route
 
 _log = get_logger(__name__)
 
@@ -182,6 +183,9 @@ async def _crawl_inner(u: str, headed: bool) -> str:
         br = await launch_chromium(pw, headless=not headed)
         try:
             ctx = await br.new_context(ignore_https_errors=True)
+            # SSRF guard: abort any document navigation/redirect to a non-public
+            # host (the browser path had none, unlike the httpx sources).
+            await ctx.route("**/*", block_private_route)
             pg = await ctx.new_page()
             await pg.goto(u, wait_until="domcontentloaded", timeout=30000)
             html = await pg.content()
@@ -196,6 +200,10 @@ async def _crawl_inner(u: str, headed: bool) -> str:
 
 
 async def crawl(u: str, headed: bool = False) -> str:
+    # SSRF guard on the INITIAL navigation (redirects are caught by the per-request
+    # route guard in _crawl_inner). Raises BlockedUrlError for a non-public host,
+    # which the scout records as a source error.
+    await asyncio.to_thread(assert_public_url, u)
     # Overall wall-clock bound for one target: goto has its own 30s timeout, but
     # content()/context teardown do not — without this a hung page could stall
     # the whole sequential scan indefinitely.

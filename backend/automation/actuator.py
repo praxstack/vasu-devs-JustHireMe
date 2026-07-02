@@ -7,6 +7,7 @@ import re
 from typing import Any
 from pydantic import BaseModel, Field
 from core.logging import get_logger
+from core.url_guard import assert_public_url, block_private_route
 
 _log = get_logger(__name__)
 
@@ -69,6 +70,10 @@ async def read_form(
                 viewport={"width": 1280, "height": 900},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             )
+            # SSRF guard: the lead URL is LLM-extracted from an untrusted page, so
+            # reject non-public hosts before navigating, and abort redirect hops.
+            await asyncio.to_thread(assert_public_url, url)
+            await ctx.route("**/*", block_private_route)
             page = await ctx.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             await page.wait_for_timeout(2000)
@@ -489,6 +494,10 @@ async def _run(job: dict, asset: str, dry_run: bool = False) -> bool | dict:
                     "Chrome/124.0.0.0 Safari/537.36"
                 ),
             )
+            # SSRF guard (same as read_form): the lead url is LLM-extracted from an
+            # untrusted page and must not drive the browser to an internal host.
+            await asyncio.to_thread(assert_public_url, job.get("url", ""))
+            await ctx.route("**/*", block_private_route)
             pg = await ctx.new_page()
             await pg.goto(job.get("url", ""), wait_until="domcontentloaded", timeout=30000)
             await pg.wait_for_timeout(2000)

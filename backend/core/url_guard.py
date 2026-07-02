@@ -106,3 +106,28 @@ def assert_public_url(url: str) -> str:
     if not is_public_host(host):
         raise BlockedUrlError(f"refusing to fetch non-public host: {host!r}")
     return url
+
+
+async def block_private_route(route) -> None:
+    """Playwright route handler: abort a browser DOCUMENT navigation (incl. redirect
+    hops) to a non-public host — the SSRF guard for the headless-browser paths.
+
+    Install with ``await context.route("**/*", block_private_route)``. Takes a
+    duck-typed ``route`` so this module stays free of a Playwright dependency, and
+    never crashes the crawl (any error lets the request proceed normally).
+    """
+    import asyncio
+
+    try:
+        request = route.request
+        if getattr(request, "resource_type", "") == "document":
+            host = urlparse(request.url).hostname or ""
+            if not await asyncio.to_thread(is_public_host, host):
+                await route.abort()
+                return
+        await route.continue_()
+    except Exception:
+        try:
+            await route.continue_()
+        except Exception:
+            pass
