@@ -7,6 +7,7 @@ import re
 from typing import Any
 from pydantic import BaseModel, Field
 from core.logging import get_logger
+from core.url_guard import assert_public_url, block_private_route
 
 _log = get_logger(__name__)
 
@@ -69,6 +70,10 @@ async def read_form(
                 viewport={"width": 1280, "height": 900},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             )
+            # SSRF guard: the lead URL is LLM-extracted from an untrusted page, so
+            # reject non-public hosts before navigating, and abort redirect hops.
+            await asyncio.to_thread(assert_public_url, url)
+            await ctx.route("**/*", block_private_route)
             page = await ctx.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             await page.wait_for_timeout(2000)
@@ -207,6 +212,20 @@ def _ready_to_submit(result: dict) -> bool:
     # actually landed in the right field, so they must NOT by themselves make a
     # form "ready to submit". A vision-only form is read/previewed, never auto-sent.
     return bool(result.get("uploaded")) and bool(result.get("fields"))
+
+
+def _submit_mode(has_submit: bool, ready: bool, dry_run: bool, auto_apply: bool) -> str:
+    """The submit safety decision, centralized so it can be unit-tested.
+
+    Returns 'dry_run' | 'read_only' | 'submit' | 'blocked'. Crucially, 'submit'
+    (the ONLY mode that actually clicks the button) requires a real submit button,
+    a DOM-verified ready form, auto-apply explicitly enabled, and not a dry run.
+    """
+    if dry_run:
+        return "dry_run"
+    if not auto_apply:
+        return "read_only"
+    return "submit" if (has_submit and ready) else "blocked"
 
 
 # Labels/controls the vision actuator must never click. The page is untrusted, so
@@ -475,6 +494,10 @@ async def _run(job: dict, asset: str, dry_run: bool = False) -> bool | dict:
                     "Chrome/124.0.0.0 Safari/537.36"
                 ),
             )
+            # SSRF guard (same as read_form): the lead url is LLM-extracted from an
+            # untrusted page and must not drive the browser to an internal host.
+            await asyncio.to_thread(assert_public_url, job.get("url", ""))
+            await ctx.route("**/*", block_private_route)
             pg = await ctx.new_page()
             await pg.goto(job.get("url", ""), wait_until="domcontentloaded", timeout=30000)
             await pg.wait_for_timeout(2000)
@@ -495,8 +518,9 @@ async def _run(job: dict, asset: str, dry_run: bool = False) -> bool | dict:
 
             submit_btn = await _find_submit(pg)
             ready = _ready_to_submit(filled)
+            mode = _submit_mode(bool(submit_btn), ready, dry_run, _AUTO_APPLY_ENABLED)
 
-            if dry_run:
+            if mode == "dry_run":
                 if submit_btn:
                     await submit_btn.scroll_into_view_if_needed()
                     await submit_btn.evaluate("el => el.style.outline = '3px solid #ef4444'")
@@ -510,7 +534,7 @@ async def _run(job: dict, asset: str, dry_run: bool = False) -> bool | dict:
                     "ready_to_submit": bool(submit_btn and ready),
                 }
 
-            if not _AUTO_APPLY_ENABLED:
+            if mode == "read_only":
                 _log.warning(
                     "auto-apply is disabled — form was read but not submitted. "
                     "Set JHM_AUTO_APPLY=true to re-enable."
@@ -524,7 +548,7 @@ async def _run(job: dict, asset: str, dry_run: bool = False) -> bool | dict:
                     "ready_to_submit": bool(submit_btn and ready),
                 }
 
-            if submit_btn and ready:
+            if mode == "submit":
                 await submit_btn.click(timeout=5000)
                 ok = True
             else:

@@ -21,10 +21,13 @@ from discovery.normalizer import (
     urgency_from_text,
     classify_job_seniority,
 )
+from discovery.sources.aggregator import scrape_aggregator_target as _source_scrape_aggregator
 from discovery.sources.ats import scrape_ashby as _source_scrape_ashby
+from discovery.sources.common import retry_after_seconds as _retry_after_seconds
 from discovery.sources.ats import scrape_direct_ats_url as _source_scrape_direct_ats_url
 from discovery.sources.ats import scrape_greenhouse as _source_scrape_greenhouse
 from discovery.sources.ats import scrape_lever as _source_scrape_lever
+from discovery.sources.ats import scrape_target as _source_scrape_ats_target
 from discovery.sources.ats import scrape_workable as _source_scrape_workable
 from discovery.sources.custom import connector_headers as _source_connector_headers
 from discovery.sources.custom import dot_get as _source_dot_get
@@ -44,6 +47,11 @@ LAST_USAGE: dict[str, Any] = {}
 # STABILITY: thread-safe scout diagnostics snapshot
 _STATE_LOCK = threading.RLock()
 _ERROR_SINK: ContextVar[list[str] | None] = ContextVar("free_scout_error_sink", default=None)
+# Per-call result sink: when set (by the caller, e.g. source_adapters.run_free_scout),
+# run()'s final _publish_state also writes usage/errors here. Because each concurrent
+# scan runs run() in its own asyncio.to_thread context, the ContextVar binding is
+# per-call, so overlapping scans can't read each other's usage via the module globals.
+_RESULT_SINK: ContextVar[dict | None] = ContextVar("free_scout_result_sink", default=None)
 
 DEFAULT_TARGETS: list[str] = []
 
@@ -58,6 +66,10 @@ def _publish_state(errors: list[str], usage: dict[str, Any]) -> None:
     with _STATE_LOCK:
         LAST_ERRORS = list(errors)
         LAST_USAGE = snapshot
+    sink = _RESULT_SINK.get()
+    if sink is not None:
+        sink["usage"] = snapshot
+        sink["errors"] = list(errors)
 
 
 def _error_sink(errors: list[str] | None = None) -> list[str]:
@@ -142,15 +154,25 @@ def _ats_targets_from_watchlist(raw: str | None) -> list[str]:
             continue
         provider = parts[0].lower()
         slug = parts[1]
-        if provider in {"greenhouse", "gh"}:
-            targets.append(f"ats:greenhouse:{slug}")
-        elif provider == "lever":
-            targets.append(f"ats:lever:{slug}")
-        elif provider == "ashby":
-            targets.append(f"ats:ashby:{slug}")
-        elif provider == "workable":
-            targets.append(f"ats:workable:{slug}")
+        canonical = _ATS_WATCHLIST_PROVIDERS.get(provider)
+        if canonical:
+            targets.append(f"ats:{canonical}:{slug}")
     return targets
+
+
+# Watchlist "provider,slug" prefixes -> canonical ats: dispatcher key. Kept in one
+# table so a newly-added keyless adapter is reachable from the watchlist too (the
+# 3 keyless boards added in discovery/sources/ats.py were previously dropped here).
+_ATS_WATCHLIST_PROVIDERS = {
+    "greenhouse": "greenhouse",
+    "gh": "greenhouse",
+    "lever": "lever",
+    "ashby": "ashby",
+    "workable": "workable",
+    "smartrecruiters": "smartrecruiters",
+    "recruitee": "recruitee",
+    "personio": "personio",
+}
 
 
 def _text_lead(item: dict, default_kind: str = "job") -> dict:
@@ -208,7 +230,7 @@ async def _json_get(url: str, params: dict | None = None) -> dict | list:
     async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as cx:
         r = await cx.get(url, params=params)
         if r.status_code == 429:
-            retry_after = int(r.headers.get("Retry-After", 15))
+            retry_after = _retry_after_seconds(r.headers.get("Retry-After"))
             await asyncio.sleep(retry_after)
             r.raise_for_status()
         r.raise_for_status()
@@ -253,16 +275,18 @@ async def _scrape_direct_ats_url(url: str) -> list[dict]:
 
 async def _scrape_target(target: str) -> list[dict]:
     lower = target.lower()
-    if lower.startswith("ats:greenhouse:"):
-        return await _scrape_greenhouse(target.split(":", 2)[2].strip())
-    if lower.startswith("ats:lever:"):
-        return await _scrape_lever(target.split(":", 2)[2].strip())
-    if lower.startswith("ats:ashby:"):
-        return await _scrape_ashby(target.split(":", 2)[2].strip())
-    if lower.startswith("ats:workable:"):
-        return await _scrape_workable(target.split(":", 2)[2].strip())
-    if lower.startswith(("http://", "https://")):
-        return await _scrape_direct_ats_url(target)
+    if lower.startswith("aggregator:"):
+        return await _source_scrape_aggregator(target)
+    if lower.startswith("ats:") or lower.startswith(("http://", "https://")):
+        leads = await _scrape_ats_target(lower, target)
+        # A job listed on an ATS board is a CURRENTLY-OPEN role regardless of when it
+        # was posted, so it must not be fail-closed-dropped by the staleness gate the
+        # way an undated scraped feed item is. Tag it as a fresh (recency-trusted)
+        # source unless the scraper already carried a machine-readable date through.
+        for lead in leads:
+            if isinstance(lead, dict) and not str(lead.get("posted_date") or "").strip():
+                lead.setdefault("_fresh_source", "ats")
+        return leads
     if lower.startswith("github:"):
         return await _scrape_github(target)
     if lower.startswith("hn:"):
@@ -272,6 +296,22 @@ async def _scrape_target(target: str) -> list[dict]:
     if lower.startswith("site:github.com"):
         return await _scrape_github(target.replace("site:github.com", "github:", 1))
     return []
+
+
+async def _scrape_ats_target(lower: str, target: str) -> list[dict]:
+    if lower.startswith("ats:greenhouse:"):
+        return await _scrape_greenhouse(target.split(":", 2)[2].strip())
+    if lower.startswith("ats:lever:"):
+        return await _scrape_lever(target.split(":", 2)[2].strip())
+    if lower.startswith("ats:ashby:"):
+        return await _scrape_ashby(target.split(":", 2)[2].strip())
+    if lower.startswith("ats:workable:"):
+        return await _scrape_workable(target.split(":", 2)[2].strip())
+    if lower.startswith("ats:"):
+        # smartrecruiters / recruitee / personio (and any future keyless ATS):
+        # route through the canonical dispatcher instead of duplicating branches.
+        return await _source_scrape_ats_target(target)
+    return await _scrape_direct_ats_url(target)
 
 
 def run(
@@ -301,7 +341,10 @@ def run(
         logging.getLogger(__name__).warning('suppressed exception in backend/automation/free_scout.py:run: %s', log_exc)
         cap = 20
     try:
-        min_score = max(0, min(int(min_signal_score or 45), 100))
+        # Distinguish an explicit 0 (accept everything) from None/unset — `or 45`
+        # silently overrode a user-chosen threshold of 0.
+        raw_min = MIN_DEFAULT_QUALITY if min_signal_score is None else int(min_signal_score)
+        min_score = max(0, min(raw_min, 100))
     except Exception as log_exc:
         logging.getLogger(__name__).warning('suppressed exception in backend/automation/free_scout.py:run: %s', log_exc)
         min_score = MIN_DEFAULT_QUALITY

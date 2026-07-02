@@ -72,8 +72,10 @@ async def actuate_job(job_id: str, manager, repo: Repository | None = None, serv
     job = job_store.create("automation_fire", {"job_id": job_id})
     try:
         job_store.update(job.job_id, status="running", progress=10)
-        lead = await asyncio.to_thread(repo.leads.get_lead_by_id, job_id)
-        asset = (lead or {}).get("resume_asset") or (lead or {}).get("asset") or ""
+        # Enrich with candidate identity (name/email/phone/links/cover_letter) the
+        # same way the Ghost auto-apply path does — the bare get_lead_by_id row has
+        # only job metadata, so the actuator would fill every identity field blank.
+        lead, asset = await service.get_lead_for_fire(job_id)
         _status, detail = fire_blocker(lead, asset)
         if detail:
             await manager.broadcast({
@@ -156,10 +158,14 @@ def create_router(manager) -> APIRouter:
             raise HTTPException(400, "no url available for this lead")
 
         profile = repo.profile.get_profile()
-        candidate = profile.get("candidate") or {}
         cfg = repo.settings.get_settings()
+        # The profile is FLAT: the candidate name is profile["n"], not a "candidate"
+        # sub-dict (there is none), and no "full_name" setting is ever written. Read
+        # it the way get_lead_for_fire_sync does, else the form-read preview shows a
+        # blank name/first/last for a fully-configured candidate.
+        candidate_name = str(profile.get("n") or "").strip() if isinstance(profile, dict) else ""
         identity = {
-            "name": cfg.get("full_name", "") or candidate.get("n", ""),
+            "name": cfg.get("full_name", "") or candidate_name,
             "email": cfg.get("email", ""),
             "phone": cfg.get("phone", ""),
             "linkedin_url": cfg.get("linkedin_url", ""),
@@ -195,11 +201,11 @@ def create_router(manager) -> APIRouter:
     @router.post("/leads/{job_id}/apply/preview")
     async def preview_apply(
         job_id: str,
-        repo: Repository = Depends(get_repository),
         service=Depends(get_automation_service),
     ):
-        lead = await asyncio.to_thread(repo.leads.get_lead_by_id, job_id)
-        asset = (lead or {}).get("resume_asset") or (lead or {}).get("asset") or ""
+        # Enrich with candidate identity like the fire path, else the preview
+        # renders every name/email/phone field blank.
+        lead, asset = await service.get_lead_for_fire(job_id)
         status_code, detail = fire_blocker(lead, asset)
         if detail:
             raise HTTPException(status_code=status_code, detail=detail)

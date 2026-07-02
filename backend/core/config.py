@@ -4,6 +4,8 @@ import logging
 import os
 import re
 
+from .company_seeds import ats_seed_targets
+
 
 DEFAULT_JOB_TARGETS = [
     "hn-hiring",
@@ -192,6 +194,31 @@ def profile_for_discovery(profile: dict | None, cfg: dict) -> dict:
     return profile
 
 
+def _clean_role_query(terms: list[str]) -> str:
+    """A short, clean ROLE phrase for the aggregator/community search queries.
+
+    Profile-derived terms are noisy — a summary like "Applied AI Engineer. Engineer
+    Summary" or an experience title like "Full-Stack Engineer — Internal Finance & P&L
+    Platform" would make a keyless job API return unrelated results (that then get
+    quality-gated to nothing). Strip project/detail suffixes, encoding artifacts and
+    filler words, and return the first genuine 1-5 word role phrase.
+    """
+    for term in terms:
+        # Non-ASCII noise (incl. mojibake em-dashes) becomes a separator, not deleted,
+        # so "Full-Stack Engineer — Internal Finance" cuts cleanly to the role.
+        s = re.sub(r"[^\x20-\x7e]+", " | ", str(term))
+        # Cut at the first separator introducing a project/detail. Only a SPACE-padded
+        # dash counts (so "Full-Stack"/"Front-End" keep their internal hyphen).
+        head = re.split(r"\s+[-—–]\s+|[|(:·•/]|\.\s+|\bat\b", s, maxsplit=1)[0]
+        head = re.sub(r"\b(summary|profile|resume|cv|experience)\b", " ", head, flags=re.I)
+        head = re.sub(r"\s+", " ", head).strip(" ,.-&")
+        words = head.split()
+        if head and 1 <= len(words) <= 5:
+            return head
+    first = (terms[0] if terms else "").strip()
+    return " ".join(first.split()[:4]) or "jobs"
+
+
 def terms_for_discovery(profile: dict, limit: int = 4) -> list[str]:
     terms: list[str] = []
     summary = str(profile.get("desired_position") or profile.get("s") or "").strip()
@@ -276,13 +303,24 @@ def has_explicit_discovery_targets(cfg: dict | None) -> bool:
 def profile_free_source_targets(profile: dict) -> str:
     if not has_profile_discovery_signal(profile):
         return ""
-    terms = terms_for_discovery(profile, 3)
-    role_query = " ".join(terms[:2])
-    return "\n".join([
+    terms = terms_for_discovery(profile, 4)
+    # A clean, focused role phrase drives the keyless aggregator + community search;
+    # the raw concatenated terms produced unrelated results that got gate-filtered away.
+    role_query = _clean_role_query(terms)
+    location = str((profile or {}).get("_discovery_location") or "").strip()
+    lines = [
+        # Keyless structured aggregator FIRST: real jobs for the candidate's role in
+        # any field/region via plain JSON APIs — no headless browser, no LLM, no key.
+        "aggregator:" + role_query + (f"@@{location}" if location else ""),
         f"github:{role_query} hiring help wanted",
         f"hn:{role_query} remote hiring",
         f"reddit:forhire:{role_query} hiring job remote",
-    ])
+    ]
+    # Auto-derived ATS company targets (greenhouse/lever/ashby/... JSON APIs) matched
+    # to the candidate's field + region, so the keyless structured backbone fires with
+    # zero manual watchlist config.
+    lines.extend(ats_seed_targets(profile))
+    return "\n".join(lines)
 
 
 def profile_x_queries(profile: dict, market_focus: str = "global") -> str:

@@ -166,6 +166,14 @@ def ingest(raw: str = "", pdf: str | None = None) -> C:
     pdf_text = _document(pdf) if pdf else ""
     txt = (raw + " " + pdf_text).strip() if pdf_text else raw
     if not txt.strip():
+        if pdf and not raw.strip():
+            # A file was supplied but produced NO extractable text (scanned/image-only
+            # PDF, unreadable DOCX). Surface it rather than silently returning an
+            # empty 'Unknown' profile with HTTP 200.
+            raise ValueError(
+                "Could not read any text from the uploaded document. If it's a "
+                "scanned or image-only PDF, paste the résumé text instead."
+            )
         _log.warning("No usable text for extraction - returning empty profile")
         return C(n="Unknown", s="")
     p = run(txt)

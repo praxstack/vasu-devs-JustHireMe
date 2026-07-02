@@ -141,11 +141,13 @@ export function useWS() {
     };
     ws.onopen    = () => {
       if (wsRef.current !== ws) return;
-      const wasReconnect = retryRef.current > 0;
       setConn("connected");
       retryRef.current = 0;
       addLog("WebSocket connected", "system", "ws");
-      if (wasReconnect) reconcileBackendStatus();
+      // Reconcile on EVERY connect (not only reconnect): a scan already running at
+      // app launch (scheduler / persisted sidecar) must be reflected in the UI
+      // instead of showing "Ready" until an incidental event happens to arrive.
+      reconcileBackendStatus();
     };
     ws.onmessage = (e) => {
       if (wsRef.current !== ws) return;
@@ -178,6 +180,24 @@ export function useWS() {
             window.dispatchEvent(new CustomEvent("leads-refresh"));
           }
           if (d.event === "auto_discard_done") window.dispatchEvent(new CustomEvent("leads-refresh"));
+          if (d.event === "scan_skipped") {
+            // Terminate the scan immediately (it returns without eval_done) and
+            // tell the user WHY, instead of leaving the spinner stuck for 15 min.
+            setProgress(emptyProgress());
+            window.dispatchEvent(new CustomEvent("scan-done"));
+            window.dispatchEvent(new CustomEvent("backend-notice", { detail: { level: "warn", msg: d.msg ?? "Scan skipped: add a target role or a job source first." } }));
+          }
+          // Surface degraded/notable outcomes prominently, not only in the log:
+          // LLM-fallback scoring, an empty scout, and feedback re-ranking.
+          if (d.event === "eval_fallback_summary" || d.event === "eval_prefilter_summary") {
+            window.dispatchEvent(new CustomEvent("backend-notice", { detail: { level: "warn", msg: d.msg ?? "Scoring ran degraded." } }));
+          }
+          if (d.event === "feedback_relearn") {
+            window.dispatchEvent(new CustomEvent("backend-notice", { detail: { level: "info", msg: d.msg ?? "Re-ranked leads from your feedback." } }));
+          }
+          if (d.event === "scout_done" && typeof d.msg === "string" && /-\s*0 new leads/.test(d.msg)) {
+            window.dispatchEvent(new CustomEvent("backend-notice", { detail: { level: "warn", msg: d.msg } }));
+          }
         } else if (d.type === "LEAD_UPDATED" && d.data) {
           window.dispatchEvent(new CustomEvent("lead-updated", { detail: d.data }));
         } else if (d.type === "HOT_X_LEAD" && d.data) {
@@ -336,5 +356,7 @@ export function useWS() {
     };
   }, [connect]);
 
-  return { conn, port, apiToken, sidecarError, logs, beat, addLog, progress };
+  const resetProgress = useCallback(() => setProgress(emptyProgress()), []);
+
+  return { conn, port, apiToken, sidecarError, logs, beat, addLog, progress, resetProgress };
 }

@@ -475,7 +475,18 @@ def _merge_profile_snapshots(existing: dict, incoming: dict) -> dict:
 
 
 def _norm_key(value: Any) -> str:
+    # Lossy key for free-text items (education/certifications/achievements) where
+    # punctuation/spacing variants of the SAME entry should de-duplicate (an entry
+    # that differs only in dashes/commas/spacing collapses to one).
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _norm_key_strict(value: Any) -> str:
+    # Punctuation-preserving key for skill/project/experience dedup, where tech-name
+    # punctuation is significant: collapsing it dropped genuinely-distinct skills
+    # (C vs C++ vs C#, .NET vs NET). Matches the [a-z0-9+#.-] class the rest of the
+    # codebase treats as significant for skills.
+    return re.sub(r"[^a-z0-9+#.-]+", "", str(value or "").lower())
 
 
 def _dedupe_dict_items(items: list[dict], id_key: str) -> list[dict]:
@@ -489,9 +500,11 @@ def _dedupe_dict_items(items: list[dict], id_key: str) -> list[dict]:
         role = str(item.get("role") or "").strip()
         company = str(item.get("co") or item.get("company") or "").strip()
         if role or company:
-            key = _norm_key(f"{role} {company}")
+            key = _norm_key_strict(f"{role} {company}")
         else:
-            key = _norm_key(item.get("title") or item.get("n") or item.get(id_key) or "")
+            # Skills/projects: keep C vs C++ vs C# distinct so a real skill isn't
+            # dropped as a false duplicate.
+            key = _norm_key_strict(item.get("title") or item.get("n") or item.get(id_key) or "")
         if not key or key in seen:
             continue
         seen.add(key)

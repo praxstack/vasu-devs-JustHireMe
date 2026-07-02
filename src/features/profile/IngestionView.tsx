@@ -102,8 +102,15 @@ export function IngestionView({ api }: { api: ApiFetch }) {
     setErrorMessage(null);
     try {
       const endpointType = type === "exp" ? "experience" : type;
+      // "Add Context" identity save is a PARTIAL update on a form that starts blank
+      // (unlike ProfileView, which pre-fills). Send only the fields the user filled
+      // so blank inputs don't overwrite previously-saved email/linkedin/etc. The
+      // backend uses exclude_unset, so unsent keys are left untouched.
+      const payload = type === "identity"
+        ? Object.fromEntries(Object.entries(data).filter(([, v]) => String(v ?? "").trim()))
+        : data;
       const r = await api(`/api/v1/profile/${endpointType}`, {
-        method: type === "identity" ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+        method: type === "identity" ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       if (r.ok) {
         setStatus("done");
