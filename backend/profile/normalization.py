@@ -2,6 +2,7 @@ from __future__ import annotations
 import logging
 
 import re
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -11,6 +12,49 @@ from models.schema import C, E, P, S
 # (e.g. data/graph/connection.py) can use it without crossing import boundaries.
 # Re-exported here for backward compatibility with existing call sites.
 from data.skill_taxonomy import SKILL_CANONICAL
+
+_log = logging.getLogger(__name__)
+
+# Upper bounds on how many of each entry we keep. Generous — a power user's
+# profile can carry well over 100 skills — while still bounding graph/vector cost.
+MAX_SKILLS = 200
+MAX_PROJECTS = 80
+MAX_EDUCATION = 30
+MAX_TEXT_ENTRIES = 40
+
+
+def coerce_skills_shape(raw: Any) -> list[Any]:
+    """Coerce any reasonable ``skills`` shape into the flat list normalize_skills
+    expects, so real-world profile JSON never fails to import.
+
+    Handles: a grouped dict ``{"languages": ["Python"], "frontend": ["React"]}``
+    (category = group name), a flat string list ``["Python", "React"]``, a list of
+    ``{name,category}`` / alt-keyed dicts, and mixtures. Anything else -> ``[]``.
+    """
+    if isinstance(raw, Mapping):
+        out: list[Any] = []
+        for group, names in raw.items():
+            items = names if isinstance(names, list) else [names]
+            for name in items:
+                if isinstance(name, Mapping):
+                    entry = dict(name)
+                    entry.setdefault("category", str(group))
+                    out.append(entry)
+                elif name is not None and str(name).strip():
+                    out.append({"name": str(name), "category": str(group)})
+        return out
+    if isinstance(raw, list):
+        return raw
+    return []
+
+
+def _cap(value: Any, limit: int) -> str:
+    """Bound a free-text field to ``limit`` chars. Replaces the per-field
+    max_length caps that used to live on the (now-removed) Pydantic import model —
+    oversized values are truncated here rather than 422'd at the API boundary."""
+    text = str(value or "")
+    return text[:limit] if len(text) > limit else text
+
 
 # Precompile the whole-token alias patterns ONCE at import. The ingest skill-scan
 # runs this vocabulary against every project + experience description; the old code
@@ -155,7 +199,7 @@ def normalize_profile_payload(data: dict[str, Any]) -> dict[str, Any]:
     data = dict(data or {})
     candidate = _normalize_candidate(data.get("candidate") or data)
     identity = dict(data.get("identity") or {})
-    skills = normalize_skills(data.get("skills") or [])
+    skills = normalize_skills(coerce_skills_shape(data.get("skills")))
     experience = normalize_experiences(data.get("experience") or [])
     projects = normalize_projects(data.get("projects") or [], known_skills=[item["name"] for item in skills])
     education = normalize_education_entries(data.get("education") or [])
@@ -227,7 +271,11 @@ def normalize_skills(raw_items: list[Any]) -> list[dict[str, str]]:
     seen: set[str] = set()
     for raw in raw_items:
         item = _as_dict(raw)
-        value = item.get("name", item.get("n", raw if isinstance(raw, str) else ""))
+        value = (
+            item.get("name") or item.get("n") or item.get("skill")
+            or item.get("title") or item.get("label")
+            or (raw if isinstance(raw, str) else "")
+        )
         category = _clean_inline_text(item.get("category", item.get("cat", "general"))) or "general"
         for skill in split_skill_names(str(value or "")):
             if not _valid_skill(skill):
@@ -236,8 +284,10 @@ def normalize_skills(raw_items: list[Any]) -> list[dict[str, str]]:
             if key in seen:
                 continue
             seen.add(key)
-            out.append({"name": skill, "category": category})
-    return out[:100]
+            out.append({"name": _cap(skill, 160), "category": _cap(category, 80)})
+    if len(out) > MAX_SKILLS:
+        _log.warning("normalize_skills: truncating %d skills to %d", len(out), MAX_SKILLS)
+    return out[:MAX_SKILLS]
 
 
 def split_skill_names(value: str) -> list[str]:
@@ -294,7 +344,11 @@ def normalize_experiences(raw_items: list[Any]) -> list[dict[str, Any]]:
             if skills:
                 existing["skills"] = _dedupe([*(existing.get("skills") or []), *skills])
             continue
-        entry = {"role": role, "company": co, "period": period, "description": description, "skills": skills}
+        entry = {
+            "role": _cap(role, 200), "company": _cap(co, 200),
+            "period": _cap(period, 100), "description": _cap(description, 5000),
+            "skills": skills,
+        }
         index[key] = entry
         out.append(entry)
     return out
@@ -377,10 +431,10 @@ def normalize_projects(raw_items: list[Any], *, known_skills: list[str] | None =
         ident = _key(title) or _key(repo)
         cleaned = {
             **item,
-            "title": title,
-            "stack": ", ".join(_dedupe(stack_items)),
-            "repo": repo,
-            "impact": impact,
+            "title": _cap(title, 200),
+            "stack": _cap(", ".join(_dedupe(stack_items)), 500),
+            "repo": _cap(repo, 500),
+            "impact": _cap(impact, 1000),
         }
         if ident in seen:
             existing = seen[ident]
@@ -392,7 +446,9 @@ def normalize_projects(raw_items: list[Any], *, known_skills: list[str] | None =
             continue
         seen[ident] = cleaned
         out.append(cleaned)
-    return out[:80]
+    if len(out) > MAX_PROJECTS:
+        _log.warning("normalize_projects: truncating %d projects to %d", len(out), MAX_PROJECTS)
+    return out[:MAX_PROJECTS]
 
 
 def normalize_stack(value: Any) -> list[str]:
@@ -439,7 +495,10 @@ def normalize_education_entries(raw_items: list[Any]) -> list[str]:
 
     if current:
         items.append(current)
-    return _dedupe([_clean_inline_text(item) for item in items if _valid_education_item(item)])[:20]
+    cleaned = _dedupe([_clean_inline_text(item) for item in items if _valid_education_item(item)])
+    if len(cleaned) > MAX_EDUCATION:
+        _log.warning("normalize_education: truncating %d entries to %d", len(cleaned), MAX_EDUCATION)
+    return cleaned[:MAX_EDUCATION]
 
 
 def _education_same_entry(current: str, line: str) -> bool:
@@ -481,7 +540,10 @@ def normalize_text_entries(raw_items: list[Any], *, kind: str) -> list[str]:
         if len(text.split()) == 1 and _key(text) in {_key(skill) for skill in SKILL_CANONICAL.values()}:
             continue
         out.append(text)
-    return _dedupe(out)[:30]
+    deduped = _dedupe(out)
+    if len(deduped) > MAX_TEXT_ENTRIES:
+        _log.warning("normalize_text_entries(%s): truncating %d to %d", kind, len(deduped), MAX_TEXT_ENTRIES)
+    return deduped[:MAX_TEXT_ENTRIES]
 
 
 def _clean_certification_entry(value: str) -> str:
@@ -536,7 +598,7 @@ def _normalize_candidate(raw: Any) -> dict[str, str]:
     item = _as_dict(raw)
     name = _clean_name(str(item.get("name") or item.get("n") or ""))
     summary = _clean_summary(str(item.get("summary") or item.get("s") or ""))
-    return {"name": name, "summary": summary}
+    return {"name": _cap(name, 160), "summary": _cap(summary, 4000)}
 
 
 def _clean_name(value: str) -> str:
