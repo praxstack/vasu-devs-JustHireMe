@@ -36,6 +36,22 @@ def test_empty_model_clears_stale_suffix():
     assert out["signal_reason"] == "quality signal"
 
 
+def test_delta_rounds_to_zero_clears_learning_meta():
+    # Contributions exist but net/round to 0 -> no boost/penalty; must clear the
+    # learning metadata (not write a contradictory 'penalty +0.4 / delta:0' block).
+    lead = {
+        "signal_score": 47,
+        "location": "berlin",
+        "source_meta": {"learning": {"base_signal_score": 40, "delta": 7, "reason": "old"}},
+    }
+    # A single "good" example sharing the location feature: 1.0 * 0.2 * 2.0 = 0.4 -> rounds to 0.
+    model = build_model([{"feedback": "good", "location": "berlin"}])
+    out = score_with_model(lead, model)
+    assert out["learning_delta"] == 0
+    assert out["learning_reason"] == ""
+    assert "learning" not in (out.get("source_meta") or {}), out.get("source_meta")
+
+
 def test_demotion_clears_stale_learning_meta():
     # A previously-boosted lead re-scored with a model that no longer matches it
     # (delta -> 0) must not keep a contradictory source_meta.learning block.

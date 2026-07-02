@@ -71,10 +71,25 @@ def _shorten_chars(text: str, limit: int) -> str:
 
 def _shorten_words(text: str, max_words: int) -> str:
     text = (text or "").strip()
-    words = text.split()
-    if len(words) <= max_words:
+    if len(text.split()) <= max_words:
         return text
-    return " ".join(words[:max_words]).rstrip(" ,;:-")
+    # Cap the word count while PRESERVING line structure — a cold email is
+    # "Subject: ...\n\n<body>", and flattening the newlines merged the subject into
+    # the body as one run-on line. Consume words line by line until the budget runs
+    # out, keeping the newlines.
+    remaining = max_words
+    lines: list[str] = []
+    for line in text.split("\n"):
+        if remaining <= 0:
+            break
+        words = line.split()
+        if len(words) <= remaining:
+            lines.append(line)
+            remaining -= len(words)
+        else:
+            lines.append(" ".join(words[:remaining]).rstrip(" ,;:-"))
+            remaining = 0
+    return "\n".join(lines).rstrip()
 
 
 def _normalize_package(package: _DocPackage, profile: dict, lead: dict, template: str = "") -> _DocPackage:

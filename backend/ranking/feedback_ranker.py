@@ -186,6 +186,16 @@ def score_with_model(lead: dict, model: dict[str, dict], max_delta: int = 18) ->
 
     raw_delta = sum(value for _, value in contributions)
     delta = max(-max_delta, min(max_delta, round(raw_delta)))
+    if delta == 0:
+        # Contributions existed but netted/rounded to zero — no real boost or
+        # penalty. Mirror the other demotion paths: don't write a contradictory
+        # 'Feedback penalty +0.4 / delta:0' block; clear the learning metadata.
+        out["learning_delta"] = 0
+        out["learning_reason"] = ""
+        out["signal_score"] = base
+        out["signal_reason"] = clean_reason
+        out["source_meta"] = _without_learning_meta(out.get("source_meta"))
+        return out
     out["learning_delta"] = delta
     out["signal_score"] = max(0, min(100, base + delta))
 
