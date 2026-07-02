@@ -180,6 +180,13 @@ export function useWS() {
             window.dispatchEvent(new CustomEvent("leads-refresh"));
           }
           if (d.event === "auto_discard_done") window.dispatchEvent(new CustomEvent("leads-refresh"));
+          if (d.event === "scan_skipped") {
+            // Terminate the scan immediately (it returns without eval_done) and
+            // tell the user WHY, instead of leaving the spinner stuck for 15 min.
+            setProgress(emptyProgress());
+            window.dispatchEvent(new CustomEvent("scan-done"));
+            window.dispatchEvent(new CustomEvent("backend-notice", { detail: { level: "warn", msg: d.msg ?? "Scan skipped: add a target role or a job source first." } }));
+          }
           // Surface degraded/notable outcomes prominently, not only in the log:
           // LLM-fallback scoring, an empty scout, and feedback re-ranking.
           if (d.event === "eval_fallback_summary" || d.event === "eval_prefilter_summary") {
