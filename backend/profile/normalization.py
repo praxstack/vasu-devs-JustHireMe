@@ -44,8 +44,106 @@ def coerce_skills_shape(raw: Any) -> list[Any]:
                     out.append({"name": str(name), "category": str(group)})
         return out
     if isinstance(raw, list):
-        return raw
+        return [item for entry in raw for item in _expand_skill_entry(entry)]
     return []
+
+
+def _expand_skill_entry(entry: Any) -> list[Any]:
+    """JSON Resume skills are ``{name: <category>, keywords: [<skill>, ...]}`` — expand
+    each keyword into its own skill categorized by the group name. Plain strings and
+    ``{name}``/``{skill}`` dicts pass through unchanged."""
+    if isinstance(entry, Mapping):
+        keywords = entry.get("keywords") or entry.get("technologies") or entry.get("items")
+        if isinstance(keywords, list) and keywords:
+            group = str(entry.get("name") or entry.get("category") or entry.get("group") or "general")
+            return [{"name": str(kw), "category": group} for kw in keywords if str(kw).strip()]
+    return [entry]
+
+
+# Identity key aliases: a user's export may use camelCase, a contact/links/social
+# sub-block, or top-level keys. Each canonical field is filled from the first source
+# that has it (our own keys win, then common variants), so any reasonable shape maps.
+_IDENTITY_ALIASES: dict[str, tuple[str, ...]] = {
+    "email": ("email", "mail", "e_mail", "emailAddress"),
+    "phone": ("phone", "mobile", "tel", "phoneNumber", "phone_number"),
+    "linkedin_url": ("linkedin_url", "linkedinUrl", "linkedin", "linkedIn"),
+    "github_url": ("github_url", "githubUrl", "github"),
+    "website_url": ("website_url", "websiteUrl", "website", "url", "portfolio", "portfolio_url", "portfolioUrl", "site"),
+    "city": ("city", "location", "locality", "town"),
+}
+
+
+def _scalarize_contact(value: Any) -> str:
+    """Reduce a contact value to a string — a plain scalar, the first list item, or a
+    dict's url/city/name/value/address (JSON Resume ``location`` is a dict)."""
+    if isinstance(value, Mapping):
+        for key in ("url", "city", "name", "value", "address", "username"):
+            if value.get(key):
+                return str(value[key]).strip()
+        return ""
+    if isinstance(value, list):
+        return _scalarize_contact(value[0]) if value else ""
+    return str(value or "").strip()
+
+
+def _coerce_identity(data: dict[str, Any]) -> dict[str, str]:
+    """Build our canonical identity dict from any of identity/contact/links/social or
+    top-level keys, honoring camelCase + common aliases."""
+    sources = [data.get("identity"), data.get("contact"), data.get("links"), data.get("social"), data]
+    merged: dict[str, str] = {}
+    for canon, aliases in _IDENTITY_ALIASES.items():
+        for source in sources:
+            src = _as_dict(source)
+            hit = ""
+            for alias in aliases:
+                if src.get(alias):
+                    hit = _scalarize_contact(src.get(alias))
+                    if hit:
+                        break
+            if hit:
+                merged.setdefault(canon, hit)
+                break
+    return merged
+
+
+def _coerce_jsonresume(data: dict[str, Any]) -> dict[str, Any]:
+    """Map the JSON Resume open standard (jsonresume.org) onto our shape. Gated on a
+    ``basics`` dict or a ``work`` list so nothing else is touched. ``work``/``skills``/
+    ``certificates``/``education`` flow through the broadened alt-key reads below;
+    only ``basics`` needs explicit mapping here."""
+    basics = data.get("basics")
+    if not isinstance(basics, Mapping) and not isinstance(data.get("work"), list):
+        return data
+    data = dict(data)
+    if isinstance(basics, Mapping):
+        candidate = _as_dict(data.get("candidate") or {})
+        if basics.get("name"):
+            candidate.setdefault("name", basics["name"])
+        if basics.get("summary") or basics.get("label"):
+            candidate.setdefault("summary", basics.get("summary") or basics.get("label"))
+        data["candidate"] = candidate
+        identity = _as_dict(data.get("identity") or {})
+        if basics.get("email"):
+            identity.setdefault("email", basics["email"])
+        if basics.get("phone"):
+            identity.setdefault("phone", basics["phone"])
+        if basics.get("url"):
+            identity.setdefault("website_url", basics["url"])
+        loc = basics.get("location")
+        if isinstance(loc, Mapping) and loc.get("city"):
+            identity.setdefault("city", loc["city"])
+        for prof in basics.get("profiles") or []:
+            entry = _as_dict(prof)
+            network = str(entry.get("network") or "").lower()
+            link = str(entry.get("url") or entry.get("username") or "").strip()
+            if not link:
+                continue
+            if "linkedin" in network:
+                identity.setdefault("linkedin_url", link)
+            elif "github" in network:
+                identity.setdefault("github_url", link)
+        data["identity"] = identity
+    return data
 
 
 def _cap(value: Any, limit: int) -> str:
@@ -196,17 +294,55 @@ GENERIC_SKILL_DENYLIST = {
 
 
 def normalize_profile_payload(data: dict[str, Any]) -> dict[str, Any]:
-    data = dict(data or {})
-    candidate = _normalize_candidate(data.get("candidate") or data)
-    identity = dict(data.get("identity") or {})
-    skills = normalize_skills(coerce_skills_shape(data.get("skills")))
-    experience = normalize_experiences(data.get("experience") or [])
-    projects = normalize_projects(data.get("projects") or [], known_skills=[item["name"] for item in skills])
-    education = normalize_education_entries(data.get("education") or [])
-    certifications = normalize_text_entries(data.get("certifications") or data.get("certs") or [], kind="certification")
-    achievements = normalize_text_entries(data.get("achievements") or data.get("awards") or [], kind="achievement")
+    """Coerce+clean a profile payload into our canonical shape (see
+    normalize_profile_payload_report for the same work plus a transparency report)."""
+    return normalize_profile_payload_report(data)[0]
 
-    return {
+
+def _received_len(value: Any) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def normalize_profile_payload_report(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Like normalize_profile_payload, but also returns a structured report of what
+    was received vs kept, so callers can tell the user exactly what happened
+    (imported / skipped-as-invalid-or-duplicate / capped) instead of silently
+    dropping entries."""
+    data = _coerce_jsonresume(dict(data or {}))
+    coerced_skills = coerce_skills_shape(data.get("skills"))
+    exp_raw = (
+        data.get("experience") or data.get("work_experience") or data.get("work")
+        or data.get("employment") or data.get("jobs") or data.get("positions") or []
+    )
+    cert_raw = data.get("certifications") or data.get("certs") or data.get("certificates") or []
+    ach_raw = data.get("achievements") or data.get("awards") or []
+    proj_raw = data.get("projects") or []
+    edu_raw = data.get("education") or []
+    received = {
+        "skills": _received_len(coerced_skills),
+        "experience": _received_len(exp_raw),
+        "projects": _received_len(proj_raw),
+        "education": _received_len(edu_raw),
+        "certifications": _received_len(cert_raw),
+        "achievements": _received_len(ach_raw),
+    }
+
+    candidate = _normalize_candidate(data.get("candidate") or data)
+    identity = {**_coerce_identity(data), **dict(data.get("identity") or {})}
+    skills = normalize_skills(coerced_skills)
+    experience = normalize_experiences(exp_raw)
+    projects = normalize_projects(proj_raw, known_skills=[item["name"] for item in skills])
+    education = normalize_education_entries(edu_raw)
+    certifications = normalize_text_entries(cert_raw, kind="certification")
+    achievements = normalize_text_entries(ach_raw, kind="achievement")
+
+    kept = {
+        "skills": len(skills), "experience": len(experience), "projects": len(projects),
+        "education": len(education), "certifications": len(certifications), "achievements": len(achievements),
+    }
+    report = _build_import_report(received, kept)
+
+    normalized = {
         **data,
         "candidate": candidate,
         "identity": identity,
@@ -217,6 +353,28 @@ def normalize_profile_payload(data: dict[str, Any]) -> dict[str, Any]:
         "certifications": [{"title": item} for item in certifications],
         "achievements": [{"title": item} for item in achievements],
     }
+    return normalized, report
+
+
+def _build_import_report(received: dict[str, int], kept: dict[str, int]) -> dict[str, Any]:
+    """Turn received-vs-kept counts into a structured, bounded transparency report."""
+    caps = {
+        "skills": MAX_SKILLS, "projects": MAX_PROJECTS, "education": MAX_EDUCATION,
+        "certifications": MAX_TEXT_ENTRIES, "achievements": MAX_TEXT_ENTRIES,
+    }
+    skipped: list[dict[str, Any]] = []
+    capped: list[dict[str, Any]] = []
+    for field, recv in received.items():
+        keep = kept.get(field, 0)
+        cap = caps.get(field)
+        over_cap = recv > cap if cap else False
+        if over_cap:
+            capped.append({"field": field, "original": recv, "kept": cap})
+        dropped = recv - keep
+        if dropped > 0:
+            reason = f"over the {cap} cap" if (over_cap and keep >= (cap or 0)) else "invalid or duplicate"
+            skipped.append({"field": field, "count": dropped, "reason": reason})
+    return {"received": received, "imported": dict(kept), "skipped": skipped, "capped": capped}
 
 
 def normalize_candidate_model(profile: C) -> C:
@@ -325,12 +483,21 @@ def normalize_experiences(raw_items: list[Any]) -> list[dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
     for raw in raw_items:
         item = _as_dict(raw)
-        role = _clean_inline_text(str(item.get("role") or "")).strip()
-        co = _clean_inline_text(str(item.get("company") or item.get("co") or "")).strip()
+        # Alt keys (our-shape-first): JSON Resume/LinkedIn use position/name, others
+        # use employer/organization, and dates arrive as startDate/endDate.
+        role = _clean_inline_text(str(item.get("role") or item.get("position") or item.get("title") or "")).strip()
+        co = _clean_inline_text(str(
+            item.get("company") or item.get("co") or item.get("employer")
+            or item.get("organization") or item.get("name") or ""
+        )).strip()
         if not role and not co:
             continue
-        period = str(item.get("period") or "").strip()
-        description = str(item.get("description") or item.get("d") or "").strip()
+        period = str(item.get("period") or "").strip() or _period_from_dates(item)
+        description = str(item.get("description") or item.get("d") or item.get("summary") or "").strip()
+        if not description:
+            highlights = item.get("highlights") or item.get("bullets")
+            if isinstance(highlights, list):
+                description = " ".join(str(h).strip() for h in highlights if str(h).strip())
         skills = [str(s).strip() for s in (item.get("skills") or item.get("s") or []) if str(s).strip()]
         key = _key(f"{role} {co}")
         if not key:
@@ -352,6 +519,17 @@ def normalize_experiences(raw_items: list[Any]) -> list[dict[str, Any]]:
         index[key] = entry
         out.append(entry)
     return out
+
+
+def _period_from_dates(item: dict[str, Any]) -> str:
+    """Build a "start - end" period from JSON-Resume/camelCase date fields when the
+    entry has no explicit ``period`` string. A missing end date reads as "Present"
+    only when a start date is present (a bare "Present" is contextless noise)."""
+    start = str(item.get("startDate") or item.get("start_date") or item.get("start") or "").strip()
+    end = str(item.get("endDate") or item.get("end_date") or item.get("end") or "").strip()
+    if start:
+        return f"{start} – {end or 'Present'}"
+    return end
 
 
 def _short_project_title(text: str) -> str:
@@ -459,9 +637,22 @@ def normalize_stack(value: Any) -> list[str]:
     return [skill for skill in _dedupe(out) if _valid_skill(skill)]
 
 
+_STRUCTURED_EDU_KEYS = (
+    "institution", "school", "college", "university",
+    "degree", "studyType", "study_type", "area", "field", "major",
+)
+
+
 def normalize_education_entries(raw_items: list[Any]) -> list[str]:
     lines: list[str] = []
+    trusted: list[str] = []  # structured education dicts bypass the résumé-text heuristic
     for raw in raw_items:
+        item = _as_dict(raw)
+        if item and any(item.get(key) for key in _STRUCTURED_EDU_KEYS):
+            title = _entry_title(raw)
+            if title:
+                trusted.append(_cap(title, 500))
+            continue
         text = _entry_title(raw)
         if not text:
             continue
@@ -495,7 +686,8 @@ def normalize_education_entries(raw_items: list[Any]) -> list[str]:
 
     if current:
         items.append(current)
-    cleaned = _dedupe([_clean_inline_text(item) for item in items if _valid_education_item(item)])
+    heuristic = [_clean_inline_text(item) for item in items if _valid_education_item(item)]
+    cleaned = _dedupe([*trusted, *heuristic])
     if len(cleaned) > MAX_EDUCATION:
         _log.warning("normalize_education: truncating %d entries to %d", len(cleaned), MAX_EDUCATION)
     return cleaned[:MAX_EDUCATION]
@@ -596,8 +788,16 @@ def _append_cert_issuer(base: str, issuer: str) -> str:
 
 def _normalize_candidate(raw: Any) -> dict[str, str]:
     item = _as_dict(raw)
-    name = _clean_name(str(item.get("name") or item.get("n") or ""))
-    summary = _clean_summary(str(item.get("summary") or item.get("s") or ""))
+    raw_name = str(item.get("name") or item.get("n") or item.get("fullName") or item.get("full_name") or "")
+    if not raw_name.strip():
+        first = str(item.get("firstName") or item.get("first_name") or "").strip()
+        last = str(item.get("lastName") or item.get("last_name") or "").strip()
+        raw_name = f"{first} {last}".strip()
+    name = _clean_name(raw_name)
+    summary = _clean_summary(str(
+        item.get("summary") or item.get("s") or item.get("headline")
+        or item.get("label") or item.get("bio") or item.get("about") or ""
+    ))
     return {"name": _cap(name, 160), "summary": _cap(summary, 4000)}
 
 
@@ -855,7 +1055,18 @@ def _clean_skill_token(value: str) -> str:
 def _entry_title(value: Any) -> str:
     item = _as_dict(value)
     if item:
-        return _clean_inline_text(str(item.get("title") or item.get("name") or item.get("n") or ""))
+        direct = item.get("title") or item.get("name") or item.get("n")
+        if direct:
+            return _clean_inline_text(str(direct))
+        # JSON Resume education: {institution, studyType, area, startDate, endDate}.
+        study = str(item.get("studyType") or item.get("degree") or "").strip()
+        area = str(item.get("area") or item.get("field") or item.get("major") or "").strip()
+        school = str(item.get("institution") or item.get("school") or item.get("college") or "").strip()
+        parts = [p for p in [study, area]  if p]
+        line = " ".join(parts)
+        if school:
+            line = f"{line} at {school}".strip() if line else school
+        return _clean_inline_text(line)
     return _clean_inline_text(str(value or ""))
 
 
