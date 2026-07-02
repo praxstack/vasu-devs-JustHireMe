@@ -43,6 +43,25 @@ export function ApprovalDrawer({ j: initialLead, api, onClose }: {
     pipelineControllerRef.current?.abort();
   }, []);
 
+  // Keep the generate-time snapshot (generatedLead) in sync with live status /
+  // feedback / follow-up updates. generatedLead's fields spread LAST into `j`, so
+  // without this the open drawer masks fresh updates: after generating a package,
+  // "Mark as applied" and feedback pills dispatch lead-updated but the drawer's own
+  // j.status / j.feedback stay stale (button never flips, pill never lights up).
+  // Mirrors ApplyJobView's onLeadUpdated. No-op when generatedLead is null (j is
+  // then initialLead, which the parent already keeps fresh).
+  useEffect(() => {
+    if (!initialLead?.job_id) return;
+    const onLeadUpdated = (event: Event) => {
+      const updated = (event as CustomEvent<Lead>).detail;
+      if (updated?.job_id === initialLead.job_id) {
+        setGeneratedLead(prev => (prev ? { ...prev, ...updated } : prev));
+      }
+    };
+    window.addEventListener("lead-updated", onLeadUpdated);
+    return () => window.removeEventListener("lead-updated", onLeadUpdated);
+  }, [initialLead?.job_id]);
+
   // Load the saved resume templates so the user can pick which one this job's
   // resume should mimic. Defaults to the template marked default (empty id ->
   // backend resolves default -> legacy setting -> built-in layout).
