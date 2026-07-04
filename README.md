@@ -33,6 +33,11 @@
 
 ---
 
+<p align="center">
+  <a href="https://trendshift.io/repositories/30452?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-30452" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/30452/daily?language=Python" alt="vasu-devs%2FJustHireMe | Trendshift" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/30452?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-30452" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/30452/daily" alt="vasu-devs%2FJustHireMe | Trendshift" width="250" height="55"/></a>
+</p>
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=vasu-devs%2FJustHireMe&type=timeline&legend=top-left">
