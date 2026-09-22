@@ -92,14 +92,17 @@ const questions = [
 
 /* ---------- notebook primitives (mirroring NotebookDesign.swift) ---------- */
 
-function PencilOutline() {
-  // Same wobble as PencilOutline in SwiftUI, expressed in a 100x100 box.
+// Same wobble as PencilOutline in SwiftUI, expressed in a 100x100 box. Very wide
+// shapes (the nav bar) need smaller side insets or the corners stretch apart.
+const PENCIL_PATHS = {
+  card: "M3 1.2 Q50 -0.6 97 1.6 Q100.6 50 99.2 96.4 Q50 100.8 2.4 99 Q-0.8 50 3 1.2 Z",
+  wide: "M0.7 4 Q50 -1.5 99.3 3 Q100.3 50 99.5 95 Q50 101.5 0.5 97 Q-0.3 50 0.7 4 Z",
+};
+
+function PencilOutline({ shape = "card" }) {
   return (
     <svg className="pencil" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <path
-        d="M3 1.2 Q50 -0.6 97 1.6 Q100.6 50 99.2 96.4 Q50 100.8 2.4 99 Q-0.8 50 3 1.2 Z"
-        vectorEffect="non-scaling-stroke"
-      />
+      <path d={PENCIL_PATHS[shape]} vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -358,20 +361,64 @@ function WaitlistForm({ id, size = "large" }) {
 
 /* ---------- sections ---------- */
 
+const navLinks = [
+  { id: "how", label: "How it works", tint: "lavender" },
+  { id: "auto", label: "Auto-apply", tint: "butter" },
+  { id: "plans", label: "Pricing", tint: "mint" },
+  { id: "faq", label: "FAQ", tint: "peach" },
+];
+
 function Header() {
+  const [active, setActive] = React.useState(null);
+  const [scrolled, setScrolled] = React.useState(false);
+
+  React.useEffect(() => {
+    // Lift the bar once the page top leaves the viewport (no scroll listeners).
+    const top = document.getElementById("top");
+    const lift = new IntersectionObserver(([entry]) => setScrolled(!entry.isIntersecting));
+    if (top) lift.observe(top);
+
+    // Underline the link for the section currently in the middle of the screen.
+    const sections = navLinks.map((link) => document.getElementById(link.id)).filter(Boolean);
+    const spy = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) setActive(entry.target.id);
+          else setActive((current) => (current === entry.target.id ? null : current));
+        });
+      },
+      { rootMargin: "-45% 0px -50% 0px" },
+    );
+    sections.forEach((section) => spy.observe(section));
+    return () => { lift.disconnect(); spy.disconnect(); };
+  }, []);
+
   return (
-    <header className="site-header">
-      <a className="brand" href="/ios/" aria-label="JustHireMe for iPhone">
-        <img src="/ios/icon-64.png" alt="" width="32" height="32" />
-        <span>JustHireMe</span>
-      </a>
-      <nav className="header-nav" aria-label="Primary">
-        <a href="#how">How it works</a>
-        <a href="#plans">Pricing</a>
-        <a href="/" className="hide-sm">Desktop app</a>
-      </nav>
-      <a className="header-cta" href="#join">Join the beta</a>
-    </header>
+    <div className="nav-wrap">
+      <header className={`site-header ${scrolled ? "is-scrolled" : ""}`}>
+        <a className="brand" href="#top" aria-label="JustHireMe for iPhone, back to top">
+          <img src="/ios/icon-64.png" alt="" width="34" height="34" />
+          <span className="brand-name">JustHireMe</span>
+          <span className="brand-tag">iPhone beta</span>
+        </a>
+        <nav className="header-nav" aria-label="Sections">
+          {navLinks.map((link) => (
+            <a key={link.id} href={`#${link.id}`} aria-current={active === link.id ? "location" : undefined}>
+              {link.label}
+              <CrayonStroke tint={link.tint} width={64} className="nav-stroke" />
+            </a>
+          ))}
+        </nav>
+        <div className="header-actions">
+          <a className="header-quiet" href="/">Desktop app <ArrowUpRight weight="bold" aria-hidden="true" /></a>
+          <a className="nb-button header-cta" href="#join">
+            <span>Join the beta</span>
+            <ArrowRight weight="bold" aria-hidden="true" />
+          </a>
+        </div>
+        <PencilOutline shape="wide" />
+      </header>
+    </div>
   );
 }
 
@@ -457,7 +504,7 @@ function AutoApply() {
     ["Daily limit", "Up to 2 a day"],
   ];
   return (
-    <section className="auto" aria-labelledby="auto-title">
+    <section className="auto" id="auto" aria-labelledby="auto-title">
       <div className="auto-copy">
         <h2 id="auto-title" className="section-title">Or let it apply while you get on with your day.</h2>
         <p>
@@ -513,7 +560,7 @@ function Plans() {
 
 function Questions() {
   return (
-    <section className="faq" aria-labelledby="faq-title">
+    <section className="faq" id="faq" aria-labelledby="faq-title">
       <NotebookCard ruled className="faq-sheet">
         <h2 id="faq-title" className="section-title">Questions</h2>
         {questions.map((item) => (
@@ -560,6 +607,7 @@ function Footer() {
 function App() {
   return (
     <WaitlistProvider>
+      <span id="top" className="top-sentinel" aria-hidden="true" />
       <Header />
       <main>
         <Hero />
