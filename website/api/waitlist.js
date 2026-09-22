@@ -37,7 +37,8 @@ function normalizeSource(value) {
 }
 
 function supabaseConfig() {
-  const url = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+  // Accept the Project URL as pasted, including the common ".../rest/v1/" form.
+  const url = (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   return url && key ? { url, key } : null;
 }
