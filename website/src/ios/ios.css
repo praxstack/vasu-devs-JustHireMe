@@ -30,6 +30,11 @@
   --margin: rgb(220 116 95 / 0.22);
   --shadow: rgb(53 57 70 / 0.05);
   --bezel: #2b2e38;
+  --scroll-track: #f6f5f0;
+  --scroll-thumb: #bcaeee;
+  --scroll-grain: rgb(255 255 255 / 0.35);
+  --scroll-thumb-hover: #9b8ad6;
+  --scroll-thumb-active: #596ba0;
 
   --display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
   --sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
@@ -61,10 +66,39 @@
     --margin: rgb(238 129 109 / 0.25);
     --shadow: rgb(0 0 0 / 0.25);
     --bezel: #0f1015;
+    --scroll-track: #20222b;
+    --scroll-thumb: #4d4566;
+    --scroll-grain: rgb(255 255 255 / 0.06);
+    --scroll-thumb-hover: #6f6394;
+    --scroll-thumb-active: #c3baf2;
   }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+
+/* ---------- scrollbar: a lavender crayon stroke on the paper ---------- */
+
+/* Chrome, Edge, Safari: full styling. The paper-coloured border insets the thumb
+   so it reads as a drawn stroke floating on the page, not a grey OS control. */
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: var(--scroll-track); }
+::-webkit-scrollbar-thumb {
+  border: 3px solid var(--scroll-track);
+  border-radius: 99px;
+  background-color: var(--scroll-thumb);
+  /* Faint diagonal grain, like wax crayon on paper. */
+  background-image: repeating-linear-gradient(115deg, transparent 0 3px, var(--scroll-grain) 3px 4px);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--scroll-thumb-hover); }
+::-webkit-scrollbar-thumb:active { background-color: var(--scroll-thumb-active); }
+::-webkit-scrollbar-corner { background: var(--scroll-track); }
+
+/* Firefox only supports colour and width; skip where ::-webkit-scrollbar works,
+   because Chromium lets the standard properties override the richer styling. */
+@supports not selector(::-webkit-scrollbar) {
+  html { scrollbar-color: var(--scroll-thumb) var(--scroll-track); scrollbar-width: thin; }
+}
 html { scroll-padding-top: 100px; -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
