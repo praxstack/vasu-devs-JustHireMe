@@ -362,7 +362,7 @@ function Header() {
   return (
     <header className="site-header">
       <a className="brand" href="/ios/" aria-label="JustHireMe for iPhone">
-        <img src="/favicon.svg" alt="" width="28" height="28" />
+        <img src="/ios/icon-64.png" alt="" width="32" height="32" />
         <span>JustHireMe</span>
       </a>
       <nav className="header-nav" aria-label="Primary">

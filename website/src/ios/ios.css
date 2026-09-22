@@ -62,8 +62,6 @@
     --shadow: rgb(0 0 0 / 0.25);
     --bezel: #0f1015;
   }
-  /* The favicon mark is a dark tile; give it a paper backing so it reads on the dark chrome. */
-  .brand img { background: #f4f3ee; border-radius: 9px; padding: 1px; }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -175,6 +173,8 @@ main > section { width: min(1180px, calc(100% - 32px)); margin-inline: auto; }
   border-bottom: 1px solid var(--rule);
 }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; }
+/* The JustHireMe mark sits on its own paper tile, like the app icon. */
+.brand img { border-radius: 8px; box-shadow: 0 0 0 1px var(--line); }
 .header-nav { display: flex; gap: 22px; margin-left: auto; font-size: 15px; color: var(--copy); }
 .header-nav a { text-decoration: none; }
 .header-nav a:hover { color: var(--ink); }
