@@ -65,7 +65,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 100px; -webkit-text-size-adjust: 100%; }
+html { scroll-padding-top: 100px; -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
@@ -307,7 +307,8 @@ main > section { width: min(1180px, calc(100% - 32px)); margin-inline: auto; }
   display: flex;
   flex-direction: column;
 }
-.phone-glass > img, .phone-glass > [role="img"] { flex: 1; min-height: 0; width: 100%; object-fit: cover; object-position: top; }
+.phone-screen { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #f6f5f0; }
+.phone-screen img, .screen-fill { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
 .status-bar {
   display: flex;
   justify-content: space-between;
@@ -384,9 +385,15 @@ main > section { width: min(1180px, calc(100% - 32px)); margin-inline: auto; }
 .how { display: grid; gap: 48px; }
 .how-grid { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 96px); }
 .how-phone { position: relative; }
-.phone-stack { position: sticky; top: 104px; display: grid; justify-items: center; }
-.phone-stack .phone { grid-area: 1 / 1; opacity: 0; transform: translateY(12px) rotate(-1.5deg); transition: opacity 0.5s var(--ease), transform 0.6s var(--ease); }
-.phone-stack .phone.is-active { opacity: 1; transform: none; }
+.phone-sticky { position: sticky; top: 104px; display: grid; justify-items: center; }
+.screen-stack { position: absolute; inset: 0; }
+.screen { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.45s var(--ease), visibility 0s linear 0.45s; }
+.screen.is-active { opacity: 1; visibility: visible; transition: opacity 0.45s var(--ease), visibility 0s; }
+/* While GSAP scrubs the screens (iOS-style push), it owns transforms; keep CSS transitions out of its way. */
+.screen-stack.is-scrubbed .screen { transition: none; will-change: transform; box-shadow: -14px 0 28px -10px rgb(35 38 52 / 0.28); }
+.screen-stack.is-scrubbed .screen:first-child { box-shadow: none; }
+/* Dims the screen being pushed back, the way iOS does. */
+.screen-shade { position: absolute; inset: 0; background: rgb(35 38 52 / 0.12); opacity: 0; pointer-events: none; }
 .how-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
 .how-step { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
 .how-step > .nb-card { display: grid; gap: 12px; padding: 28px; transition: transform 0.5s var(--ease), opacity 0.5s var(--ease); opacity: 0.72; transform: scale(0.98); }
@@ -494,7 +501,7 @@ main > section { width: min(1180px, calc(100% - 32px)); margin-inline: auto; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .site-header, .header-nav a, .nav-stroke { transition: none; }
-  .phone-stack .phone, .how-step > .nb-card, .nb-button, .faq summary svg { transition: none; }
+  .screen, .how-step > .nb-card, .nb-button, .faq summary svg { transition: none; }
 }
 
 /* ---------- responsive ---------- */

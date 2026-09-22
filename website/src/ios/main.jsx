@@ -11,7 +11,14 @@ import {
   WifiHigh,
   XLogo,
 } from "@phosphor-icons/react";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
+import Lenis from "lenis";
+import "lenis/dist/lenis.css";
 import "./ios.css";
+
+gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 // The iPhone beta waitlist page. Visual language is lifted from the iOS app
 // (ios/JustHireMe/NotebookDesign.swift + Theme.swift): pencil-outline cards,
@@ -213,18 +220,30 @@ function TrackerScreen() {
   );
 }
 
-function Phone({ screen, className = "", eager = false }) {
+function ScreenContent({ screen, eager = false }) {
+  return screen.tracker ? (
+    <div className="screen-fill" role="img" aria-label={screen.alt}><TrackerScreen /></div>
+  ) : (
+    <img src={screen.src} alt={screen.alt} width="603" height="1170" loading={eager ? "eager" : "lazy"} decoding="async" />
+  );
+}
+
+function PhoneFrame({ className = "", children }) {
   return (
     <figure className={`phone ${className}`}>
       <div className="phone-glass">
         <StatusBar />
-        {screen.tracker ? (
-          <div role="img" aria-label={screen.alt}><TrackerScreen /></div>
-        ) : (
-          <img src={screen.src} alt={screen.alt} width="603" height="1170" loading={eager ? "eager" : "lazy"} decoding="async" />
-        )}
+        <div className="phone-screen">{children}</div>
       </div>
     </figure>
+  );
+}
+
+function Phone({ screen, className = "", eager = false }) {
+  return (
+    <PhoneFrame className={className}>
+      <ScreenContent screen={screen} eager={eager} />
+    </PhoneFrame>
   );
 }
 
@@ -446,8 +465,11 @@ function Hero() {
 
 function HowItWorks() {
   const [active, setActive] = React.useState(0);
+  const sectionRef = React.useRef(null);
   const stepRefs = React.useRef([]);
 
+  // Which step is in the middle of the screen: drives the card highlight, the
+  // "Sample data" note, and the screen swap when scrubbing is off (mobile, reduced motion).
   React.useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -461,15 +483,58 @@ function HowItWorks() {
     return () => observer.disconnect();
   }, []);
 
+  // Desktop: one phone whose screens change like an iOS navigation push, driven by
+  // the scroll position. Each step owns one unit of the timeline; around each
+  // boundary the next screen slides in from the right over the current one, which
+  // eases a little to the left underneath. Transforms only, so it stays on the GPU.
+  useGSAP(() => {
+    const mm = gsap.matchMedia();
+    mm.add("(min-width: 901px) and (prefers-reduced-motion: no-preference)", () => {
+      const stack = sectionRef.current.querySelector(".screen-stack");
+      const screens = gsap.utils.toArray(".screen-stack .screen", sectionRef.current);
+      stack.classList.add("is-scrubbed");
+      gsap.set(screens, { autoAlpha: 1, xPercent: 100 });
+      gsap.set(screens[0], { xPercent: 0 });
+
+      const timeline = gsap.timeline({
+        defaults: { ease: "power2.inOut", duration: 0.5 },
+        scrollTrigger: {
+          trigger: sectionRef.current.querySelector(".how-steps"),
+          start: "top center",
+          end: "bottom center",
+          scrub: 0.6,
+        },
+      });
+      screens.forEach((screen, index) => {
+        if (index === 0) return;
+        const at = index - 0.25;
+        timeline
+          .to(screen, { xPercent: 0 }, at)
+          .to(screens[index - 1], { xPercent: -28 }, at)
+          .to(screens[index - 1].querySelector(".screen-shade"), { opacity: 1 }, at);
+      });
+      timeline.set({}, {}, screens.length); // keep one timeline unit per step
+
+      return () => stack.classList.remove("is-scrubbed");
+    });
+  }, { scope: sectionRef });
+
   return (
-    <section className="how" id="how" aria-labelledby="how-title">
+    <section className="how" id="how" aria-labelledby="how-title" ref={sectionRef}>
       <h2 id="how-title" className="section-title">From a resume to applications, in five screens.</h2>
       <div className="how-grid">
         <div className="how-phone" aria-hidden="true">
-          <div className="phone-stack">
-            {steps.map((step, index) => (
-              <Phone key={step.chapter} screen={step.screen} className={index === active ? "is-active" : ""} />
-            ))}
+          <div className="phone-sticky">
+            <PhoneFrame>
+              <div className="screen-stack">
+                {steps.map((step, index) => (
+                  <div key={step.chapter} className={`screen ${index === active ? "is-active" : ""}`}>
+                    <ScreenContent screen={step.screen} eager={index < 2} />
+                    <span className="screen-shade" />
+                  </div>
+                ))}
+              </div>
+            </PhoneFrame>
             <p className="sample-note stack-note" data-visible={steps[active].screen.tracker ? "true" : "false"}>Sample data</p>
           </div>
         </div>
@@ -604,7 +669,43 @@ function Footer() {
   );
 }
 
+// Smooth, inertial wheel scrolling (touch keeps native scrolling). Lenis runs on
+// GSAP's ticker so ScrollTrigger reads the same scroll position every frame.
+const NAV_CLEARANCE = 100; // floating nav height + breathing room; matches scroll-padding-top
+
+function useSmoothScroll() {
+  React.useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+    const lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 0.9 });
+    lenis.on("scroll", ScrollTrigger.update);
+    const tick = (time) => lenis.raf(time * 1000);
+    gsap.ticker.add(tick);
+    gsap.ticker.lagSmoothing(0);
+
+    // In-page links: glide to an exact pixel target that clears the floating nav.
+    const onClick = (event) => {
+      const link = event.target.closest('a[href^="#"]');
+      if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey) return;
+      const id = link.getAttribute("href").slice(1);
+      const target = id ? document.getElementById(id) : null;
+      if (!target) return;
+      event.preventDefault();
+      const y = id === "top" ? 0 : target.getBoundingClientRect().top + window.scrollY - NAV_CLEARANCE;
+      lenis.scrollTo(Math.max(0, y), { duration: 1.1 });
+      history.replaceState(null, "", `#${id}`);
+    };
+    document.addEventListener("click", onClick);
+
+    return () => {
+      document.removeEventListener("click", onClick);
+      gsap.ticker.remove(tick);
+      lenis.destroy();
+    };
+  }, []);
+}
+
 function App() {
+  useSmoothScroll();
   return (
     <WaitlistProvider>
       <span id="top" className="top-sentinel" aria-hidden="true" />
