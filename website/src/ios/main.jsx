@@ -25,7 +25,6 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 // crayon strokes, ruled paper, Instrument Serif / Instrument Sans, pastel tints.
 
 const WAITLIST_LIST = "ios";
-const SHOW_COUNT_FROM = 25; // below this a public count reads as empty, not as proof
 const REPO_URL = "https://github.com/vasu-devs/JustHireMe";
 const X_URL = "https://x.com/vasu_devs";
 const CONTACT_EMAIL = "pls@justhireme.ai";
@@ -298,8 +297,49 @@ function WaitlistProvider({ children }) {
   return <WaitlistContext.Provider value={value}>{children}</WaitlistContext.Provider>;
 }
 
+// Live number of people on the iPhone waitlist (read from Supabase via /api/waitlist).
+// Counts up when it first loads and ticks up again the moment someone joins.
+function WaitlistCounter({ className = "" }) {
+  const { count } = React.useContext(WaitlistContext);
+  const [display, setDisplay] = React.useState(0);
+  const shown = React.useRef({ value: 0 });
+
+  React.useEffect(() => {
+    if (count == null) return undefined;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      shown.current.value = count;
+      setDisplay(count);
+      return undefined;
+    }
+    const tween = gsap.to(shown.current, {
+      value: count,
+      duration: Math.min(1.4, 0.5 + Math.abs(count - shown.current.value) * 0.02),
+      ease: "power2.out",
+      onUpdate: () => setDisplay(Math.round(shown.current.value)),
+    });
+    return () => tween.kill();
+  }, [count]);
+
+  if (count == null) return <div className={`waitlist-counter is-loading ${className}`} aria-hidden="true" />;
+  return (
+    <div className={`waitlist-counter ${className}`} aria-live="polite">
+      {count === 0 ? (
+        <span className="counter-label">Be the first on the waitlist</span>
+      ) : (
+        <>
+          <strong className="counter-num" aria-label={count.toLocaleString()}>
+            {display.toLocaleString()}
+            <CrayonStroke tint="lavender" width={90} className="counter-stroke" />
+          </strong>
+          <span className="counter-label">{count === 1 ? "person on the waitlist" : "people on the waitlist"}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 function WaitlistForm({ id, size = "large" }) {
-  const { count, joined, join } = React.useContext(WaitlistContext);
+  const { joined, join } = React.useContext(WaitlistContext);
   const [email, setEmail] = React.useState("");
   const [website, setWebsite] = React.useState("");
   const [error, setError] = React.useState("");
@@ -369,10 +409,7 @@ function WaitlistForm({ id, size = "large" }) {
       {error ? (
         <p className="form-error" id={errorId} role="alert">{error}</p>
       ) : (
-        <p className="form-note">
-          {count != null && count >= SHOW_COUNT_FROM ? `${count.toLocaleString()} people are on the list. ` : ""}
-          One email when it opens. No newsletter.
-        </p>
+        <p className="form-note">One email when it opens. No newsletter.</p>
       )}
     </form>
   );
@@ -454,6 +491,7 @@ function Hero() {
             Upload your resume once. JustHireMe finds roles that fit, tailors your resume and applies for you.
           </p>
           <WaitlistForm id="hero" />
+          <WaitlistCounter />
         </div>
       </NotebookCard>
       <div className="hero-phone">
@@ -649,6 +687,7 @@ function FinalCall() {
         <h2 id="final-title">Be one of the first to use it.</h2>
         <p>Leave your email and we'll send your invite when the beta opens.</p>
         <WaitlistForm id="final" size="compact" />
+        <WaitlistCounter className="is-compact" />
       </NotebookCard>
     </section>
   );
